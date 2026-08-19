@@ -2,7 +2,14 @@ import re
 import numpy as np
 from datasets import load_dataset
 from typing import List, Optional
-from egg_img import EGG_IMG, CHICK_IMG
+try:
+    from egg_img import EGG_IMG, CHICK_IMG
+except ImportError:
+    # egg_img.py (and the DrawEgg/DrawChick tasks that used it) were removed in
+    # the "cleaned" commit but this import was left dangling, which breaks
+    # `import tasks` for every task. These symbols are unused here; guard so the
+    # module (and the trainer that imports it) loads. Additive fix, no behaviour change.
+    EGG_IMG = CHICK_IMG = None
 
 def general_get_fitness(task_obj, generations, truncateds, answer, pass_at_k: bool = False):
         if len(generations) == 0:
@@ -354,3 +361,125 @@ class CountdownTask:
         return reward, model_answer
     
 
+
+
+# ======================================================================
+# h1 GSM-LongHorizon task (EGGROLL port of h1's DrGRPO setup)
+# ----------------------------------------------------------------------
+# Same model, dataset splits, prompts, rewards and curriculum structure as
+# LongHorizonReasoning/h1 -- only the optimiser (GRPO -> EGGROLL) changes.
+#   * prompts:  h1's exact system prompt + chat template (see h1_rewards.py)
+#   * fitness:  h1's DrGRPO total reward per rollout (correctness via the
+#               vendored h1_math_utils.grade_answer + h1's format rewards),
+#               with the int/float numeric-format reward selected exactly like
+#               h1's --float_reward_func flag.
+#   * grouping: fitness is a scalar per rollout; the ES loop then centres
+#               fitnesses *per prompt/question column* (es_lora_multinode.py,
+#               `fitness_per_prompt`), i.e. per-question normalisation -- the
+#               same treatment MathTask relies on, NOT a global z-score.
+# ======================================================================
+from h1_rewards import (
+    SYSTEM_PROMPT as H1_SYSTEM_PROMPT,
+    extract_answer_from_text as h1_extract_answer,
+    total_reward as h1_total_reward,
+)
+
+
+class GSMLongHorizonTask:
+    """h1 GSM-LongHorizon horizon-split task for EGGROLL.
+
+    Task spec (parsed in es_lora_multinode.py): ``gsm_longhorizon:<path>`` or
+    ``gsm_longhorizon:<int|float>:<path>`` where ``<path>`` points at a local
+    JSONL split such as ``GSM-LongHorizon/train_len_1.jsonl``. Each JSONL line
+    has (at least) ``question`` and ``final_answer`` -- the same fields h1's
+    ``get_gsm8k_questions`` reads.
+
+    reward_mode selects the numeric-format reward, mirroring h1's
+    ``--float_reward_func``:
+      * "int"   -> int_reward_func   (horizon 1, integer answers)   [h1 default]
+      * "float" -> float_reward_func (horizons 2-5, float answers)
+    """
+
+    def __init__(self, batch_size, seed, data_path, model_name,
+                 reward_mode="int", datset_size=None, apply_chat_template=True,
+                 shuffle=False, enable_thinking=False):
+        import json
+        assert reward_mode in ("int", "float"), \
+            f"reward_mode must be 'int' or 'float', got {reward_mode!r}"
+        self.dataset_name = f"gsm_longhorizon:{data_path}"
+        self.data_path = data_path
+        self.reward_mode = reward_mode
+        self.float_mode = (reward_mode == "float")
+        self.batch_size = batch_size
+        self.apply_chat_template = apply_chat_template
+        # Qwen3 chat template defaults to enable_thinking=True (emits a
+        # <think>...</think> trace that breaks h1's <reasoning>/<answer>
+        # format rewards and blows the completion budget). Default to False
+        # so Qwen3 produces h1-style direct output. No-op for Qwen2.5
+        # (its template ignores the kwarg), so the 3B path is unchanged.
+        self.enable_thinking = enable_thinking
+        self.is_train = True
+
+        # --- Load local JSONL horizon split ---
+        with open(data_path, "r") as f:
+            self.dataset = [json.loads(line) for line in f]
+        assert len(self.dataset) > 0, f"Empty dataset at {data_path}"
+        assert "question" in self.dataset[0] and "final_answer" in self.dataset[0], \
+            (f"GSM-LongHorizon JSONL rows must have 'question' and 'final_answer' "
+             f"(got keys {list(self.dataset[0].keys())}).")
+
+        # h1's grpo.py defaults to shuffle_dataset=False (ordered iteration); keep
+        # that default here. seed only matters when shuffle=True.
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            order = rng.permutation(len(self.dataset)).tolist()
+            self.dataset = [self.dataset[i] for i in order]
+        if datset_size is not None:
+            self.dataset = self.dataset[:datset_size]
+
+        # Tokenizer for h1's chat-template prompt construction. For curriculum
+        # stages >1, model_name is the merged HF checkpoint dir (tokenizer saved
+        # alongside it by merge_checkpoint.py), so this resolves correctly.
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.system_prompt = H1_SYSTEM_PROMPT  # verbatim h1 system prompt
+        self.idx = 0
+
+    def _format_conversation(self, example):
+        # Identical prompt construction to h1's get_gsm8k_questions: a system
+        # message with h1's SYSTEM_PROMPT and a user message with the question.
+        question = example["question"].strip()
+        if self.apply_chat_template:
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": question},
+            ]
+            return self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True,
+                enable_thinking=self.enable_thinking,
+            )
+        # Non-chat fallback (kept faithful by still prepending the system prompt).
+        return f"{self.system_prompt}\n\nUser: {question}\nAssistant:"
+
+    def _format_examples(self, examples):
+        batch_prompts = [self._format_conversation(e) for e in examples]
+        batch_answers = [e["final_answer"] for e in examples]
+        return batch_prompts, batch_answers
+
+    def get_batch(self):
+        indices = np.arange(self.idx, self.idx + self.batch_size) % len(self.dataset)
+        self.idx += self.batch_size
+        examples = [self.dataset[i] for i in indices]
+        return self._format_examples(examples)
+
+    def get_fitness(self, generations, truncateds, gt_answer, pass_at_k: bool = False):
+        return general_get_fitness(self, generations, truncateds, gt_answer, pass_at_k)
+
+    def get_fitness_single_sample(self, generation, truncated, gt_answer):
+        # h1/DrGRPO scores truncated completions normally (it does not zero them):
+        # a rollout cut off at max_completion_length simply tends to miss its
+        # </answer> tag and so scores low on format + correctness. We mirror that
+        # rather than forcing truncated -> 0 (which MathTask does).
+        reward = h1_total_reward(generation, gt_answer, float_mode=self.float_mode)
+        model_answer = h1_extract_answer(generation)
+        return float(reward), model_answer

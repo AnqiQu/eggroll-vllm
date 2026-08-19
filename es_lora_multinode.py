@@ -31,7 +31,7 @@ from peft import LoraConfig, get_peft_model
 from vllm.lora.request import LoRARequest
 from safetensors.torch import save_file, load_file
 
-from tasks import MathTask, CountdownTask, ZerosTask, RandomTask
+from tasks import MathTask, CountdownTask, ZerosTask, RandomTask, GSMLongHorizonTask
 
 print("IMPORTS: All imports completed successfully", flush=True)
 print("=" * 80, flush=True)
@@ -1257,6 +1257,29 @@ def main(args: Args):
             seed=args.base_seed,
             datset_size=args.sub_dataset_size,
             end_token=None
+        )
+    elif args.task.startswith("gsm_longhorizon:"):
+        # h1 GSM-LongHorizon horizon split. Spec: gsm_longhorizon:<path> or
+        # gsm_longhorizon:<int|float>:<path>. The int/float token selects the
+        # numeric-format reward, mirroring h1's --float_reward_func (int for
+        # horizon 1, float for horizons 2-5). No leading "math:" prefix, so the
+        # in-loop math-eval branch below stays off (h1 selects checkpoints
+        # externally with gsm_eval.py). See tasks.GSMLongHorizonTask.
+        spec = args.task[len("gsm_longhorizon:"):]
+        parts = spec.split(":")
+        if parts[0] in ("int", "float"):
+            reward_mode = parts[0]
+            data_path = ":".join(parts[1:])
+        else:
+            reward_mode = "int"
+            data_path = spec
+        task = GSMLongHorizonTask(
+            batch_size=args.prompt_batch_size,
+            seed=args.base_seed,
+            data_path=data_path,
+            model_name=args.model_name,
+            reward_mode=reward_mode,
+            datset_size=args.sub_dataset_size,
         )
     elif args.task.startswith("math:answer-tags:"):
         dataset_name = args.task.split("math:answer-tags:")[1]
