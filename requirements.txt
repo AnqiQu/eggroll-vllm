@@ -4,7 +4,10 @@ wandb==0.23.0
 weave==0.52.33
 peft==0.18.0
 datasets==4.4.1
-gem-llm==0.1.0; python_version >= "3.10" and python_version < "3.13"  # only used by MathTask; wheels exist for py3.10-3.12 only
+# Optional, MathTask only (not used by the h1 GSM-LongHorizon run). gem-llm's
+# Requires-Python is ">=3.10,<=3.12", which excludes 3.12.1+; use python_full_version
+# so pip installs it only where it is actually installable and skips it otherwise.
+gem-llm==0.1.0; python_full_version >= "3.10" and python_full_version <= "3.12.0"
 pylatexenc==2.10
 ray==2.51.1
 accelerate==1.11.0
