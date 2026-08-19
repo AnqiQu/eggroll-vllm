@@ -30,8 +30,8 @@
 #   # ... repeat for stages 3, 4, 5 ...
 #
 # Env overrides: STAGE (required), BASE_MODEL, DATA_DIR, OUTPUT_ROOT, GSM_EVAL,
-#   EVAL_STEPS, MAX_TOKENS, SUB_DATASET_SIZE, plus any EGGROLL hyperparameter in
-#   the config block below.
+#   EVAL_STEPS, MAX_TOKENS, SUB_DATASET_SIZE, USE_WANDB, WANDB_PROJECT, plus any
+#   EGGROLL hyperparameter in the config block below.
 # ==========================================================================
 
 set -euo pipefail
@@ -129,6 +129,14 @@ NORMALIZE_FLAG=""
 SUBSET_FLAG=""
 [[ -n "${SUB_DATASET_SIZE:-}" ]] && SUBSET_FLAG="--sub-dataset-size ${SUB_DATASET_SIZE}"
 
+# Optional: log to Weights & Biases. Set USE_WANDB=1 (run `wandb login` first);
+# WANDB_PROJECT overrides the default project name.
+WANDB_FLAGS=""
+if [[ "${USE_WANDB:-0}" == "1" ]]; then
+    WANDB_FLAGS="--use-wandb"
+    [[ -n "${WANDB_PROJECT:-}" ]] && WANDB_FLAGS="$WANDB_FLAGS --wandb-project ${WANDB_PROJECT}"
+fi
+
 echo "=========================================================================="
 echo " h1 curriculum -- STAGE $STAGE  (horizon $HORIZON)"
 echo "   base model            : $BASE_MODEL"
@@ -165,6 +173,7 @@ python es_lora_multinode.py \
     --temperature "$TEMPERATURE" \
     $NORMALIZE_FLAG \
     $SUBSET_FLAG \
+    $WANDB_FLAGS \
     --steps-per-eval -1 \
     --save-freq "$SAVE_FREQ" \
     --checkpoint-dir "$CKPT_DIR" \
