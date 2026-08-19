@@ -1,7 +1,27 @@
-wandb/
+# Python
 __pycache__/
+*.pyc
+*.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Runtime / logs / caches
+wandb/
 logs/
+cache/
 core
 des/
 tmp/
 sampling_outputs/
+
+# Vendored upstream clone (h1 evaluator is vendored as h1_gsm_eval.py instead)
+h1/
+
+# Training artifacts & data (regenerated / downloaded locally, not committed)
+runs/
+checkpoints/
+merged_models/
+GSM-LongHorizon/
+run_inside_docker.sh
