@@ -138,7 +138,14 @@ class RandomTask:
         is_correct = (model_answer is not None) and (model_answer == int(answer))
         return 1.0 if is_correct else 0.0, model_answer
 
-from gem.utils.math_grader import extract_answer, grade
+# gem-llm ships wheels only for Python 3.10-3.12 and is used solely by MathTask
+# below. Guard the import so the module (and GSMLongHorizonTask, which does not
+# need gem) still loads on other interpreters; MathTask will raise clearly if
+# actually used without gem installed.
+try:
+    from gem.utils.math_grader import extract_answer, grade
+except ImportError:
+    extract_answer = grade = None
 
 def boxed_reward_fn(model_answer, gt_answer, fast=False,):
     if isinstance(gt_answer, float) or isinstance(gt_answer, int):
