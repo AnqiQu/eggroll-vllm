@@ -12,7 +12,12 @@ sys.path.insert(0, '/home/s5j/asims.s5j/Documents/esvllm-outer/hyperscale-es-vll
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from vllm import LLM, SamplingParams
 from safetensors.torch import load_file, save_file
-from tasks import DrawEggTask, DrawChickTask
+try:
+    from tasks import DrawEggTask, DrawChickTask
+except ImportError:
+    # These tasks were removed from tasks.py; the import is unused here but was
+    # left dangling and breaks `python merge_checkpoint.py`. Guard it (additive).
+    DrawEggTask = DrawChickTask = None
 
 
 def unfuse_vllm_to_transformers(vllm_weights, model_config):
@@ -118,18 +123,25 @@ def main():
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--max-tokens", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Directory to write the merged HF model to. If omitted, "
+                             "falls back to the original derived tmp path (legacy behaviour).")
     args = parser.parse_args()
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    # Create temporary directory for merged model
-    import tempfile
-    import shutil
-    temp_dir = tempfile.mkdtemp()
-    temp_dir = "/home/s5j/asims.s5j/Documents/esvllm-outer/hyperscale-es-vllm/tmp"
-    checkpoint_name = args.checkpoint.strip("/").split("/")[-3]
-    merged_model_path = os.path.join(temp_dir, "merged_models", checkpoint_name)
+    # Destination for the merged HF model.
+    if args.output_dir is not None:
+        merged_model_path = os.path.expandvars(args.output_dir)
+    else:
+        # Legacy behaviour: derive a path under a hard-coded tmp dir.
+        import tempfile
+        import shutil
+        temp_dir = tempfile.mkdtemp()
+        temp_dir = "/home/s5j/asims.s5j/Documents/esvllm-outer/hyperscale-es-vllm/tmp"
+        checkpoint_name = args.checkpoint.strip("/").split("/")[-3]
+        merged_model_path = os.path.join(temp_dir, "merged_models", checkpoint_name)
     os.makedirs(merged_model_path, exist_ok=True)
 
     # Merge checkpoint into base model
