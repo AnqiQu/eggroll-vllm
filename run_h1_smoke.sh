@@ -26,7 +26,9 @@ set -euo pipefail
 
 MODEL="${MODEL:-Qwen/Qwen3-1.7B}"
 DATA_DIR="${DATA_DIR:-GSM-LongHorizon}"
-OUT="${OUTPUT_ROOT:-runs/smoke}"
+OUT="${OUTPUT_ROOT:-runs/smoke}"          # heavy artifacts (checkpoints/merged) -- gitignored
+RESULTS_DIR="${RESULTS_DIR:-results}"     # lightweight metrics JSON -- tracked in git
+mkdir -p "$RESULTS_DIR"
 
 # Tiny knobs (all overridable)
 POPULATION_SIZE="${POPULATION_SIZE:-8}"    # must be even (antithetic pairs)
@@ -80,10 +82,12 @@ python h1_gsm_eval.py \
     --instruct --tp 1 \
     --num_samples "$EVAL_SAMPLES" \
     --max_new_tokens "$MAX_TOKENS" \
-    --out_file "$OUT/smoke_eval.json"
+    --out_file "$RESULTS_DIR/smoke_eval.json"
 
 echo
 echo "############################################################"
 echo "# SMOKE TEST PASSED -- the full pipeline runs end to end."
+echo "# Metrics written to: $RESULTS_DIR/smoke_eval.json (tracked in git)"
+echo "#   commit with: git add $RESULTS_DIR/ && git commit -m 'results: smoke'"
 echo "# Now launch a real run: STAGE=1 ./run_h1_curriculum.sh"
 echo "############################################################"

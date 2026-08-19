@@ -216,6 +216,11 @@ done
 Use the best `…/merged/step_<BEST>` directory as `BASE_MODEL` for the next stage.
 Selection is intentionally **manual** (the runner pauses); nothing is auto-selected.
 
+Eval metrics are written to `results/` (tracked in git) as
+`stage<N>_len<H>_step_<step>.json`, while heavy artifacts (checkpoints, merged
+weights) stay under `runs/` (gitignored — they exceed GitHub's 100 MB limit).
+Commit metrics with `git add results/ && git commit -m "results: …"`.
+
 ### 4. Hyperparameters and equal-compute budget
 
 The EGGROLL hyperparameters (`population_size`, `sigma`, `learning_rate`,

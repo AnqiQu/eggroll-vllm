@@ -96,6 +96,7 @@ declare -a RMODE=(   ""  int   float  float  float  float )  # int|float reward 
 DATA_DIR="${DATA_DIR:-GSM-LongHorizon}"          # dir with train_len_N.jsonl / test_len_N.jsonl
 OUTPUT_ROOT="${OUTPUT_ROOT:-runs/h1_curriculum}" # where stage checkpoints/merges go
 GSM_EVAL="${GSM_EVAL:-h1_gsm_eval.py}"           # vendored h1 evaluator (repo root)
+RESULTS_DIR="${RESULTS_DIR:-results}"            # lightweight eval metrics JSON -- tracked in git
 
 # ==========================================================================
 # ============================  END CONFIG  ================================
@@ -136,6 +137,8 @@ if [[ "${USE_WANDB:-0}" == "1" ]]; then
     WANDB_FLAGS="--use-wandb"
     [[ -n "${WANDB_PROJECT:-}" ]] && WANDB_FLAGS="$WANDB_FLAGS --wandb-project ${WANDB_PROJECT}"
 fi
+
+mkdir -p "$RESULTS_DIR"
 
 echo "=========================================================================="
 echo " h1 curriculum -- STAGE $STAGE  (horizon $HORIZON)"
@@ -221,8 +224,11 @@ cat <<MSG
        --models $MERGED_DIR/step_\${step} \\
        --datasets $DATA_DIR/test_len_1.jsonl $DATA_DIR/test_len_2.jsonl $DATA_DIR/test_len_3.jsonl \\
        --instruct --tp 1 \\
-       --out_file $MERGED_DIR/eval_step_\${step}.json
+       --out_file $RESULTS_DIR/stage${STAGE}_len${HORIZON}_step_\${step}.json
    done
+
+ Metrics land in $RESULTS_DIR/ (tracked in git); commit them with:
+   git add $RESULTS_DIR/ && git commit -m "results: stage $STAGE eval"
 
  Pick the step with the best overall horizon-1..3 accuracy, then launch the
  next stage using that merged dir as the base model:

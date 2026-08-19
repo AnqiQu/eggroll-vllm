@@ -1,0 +1,7 @@
+# Safety net: never track heavy binaries in results/ (metrics JSON/text only).
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+*.gguf
+*.onnx
