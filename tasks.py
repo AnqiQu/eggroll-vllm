@@ -388,7 +388,8 @@ class CountdownTask:
 from h1_rewards import (
     SYSTEM_PROMPT as H1_SYSTEM_PROMPT,
     extract_answer_from_text as h1_extract_answer,
-    total_reward as h1_total_reward,
+    correctness_reward as h1_correctness_reward,
+    format_reward as h1_format_reward,
 )
 
 
@@ -409,7 +410,7 @@ class GSMLongHorizonTask:
 
     def __init__(self, batch_size, seed, data_path, model_name,
                  reward_mode="int", datset_size=None, apply_chat_template=True,
-                 shuffle=False, enable_thinking=False):
+                 shuffle=False, enable_thinking=False, fitness_mode="correctness"):
         import json
         assert reward_mode in ("int", "float"), \
             f"reward_mode must be 'int' or 'float', got {reward_mode!r}"
@@ -417,6 +418,19 @@ class GSMLongHorizonTask:
         self.data_path = data_path
         self.reward_mode = reward_mode
         self.float_mode = (reward_mode == "float")
+        # --- Fitness objective (Tier-1) ---------------------------------------
+        # The scalar EGGROLL actually optimizes per rollout:
+        #   "correctness" -> h1 correctness reward ONLY (0.0 / CORRECT_REWARD)
+        #   "total"       -> h1's correctness + format reward (original h1 sum)
+        # Default is correctness-only: the instruct base model already formats
+        # near-perfectly, so including the format reward let ES climb format
+        # without improving accuracy. The format reward is still COMPUTED and
+        # logged (reward/format) -- it just no longer drives the ES update.
+        # Override at runtime with EGGROLL_FITNESS_MODE=total.
+        import os
+        self.fitness_mode = os.environ.get("EGGROLL_FITNESS_MODE", fitness_mode)
+        assert self.fitness_mode in ("correctness", "total"), \
+            f"fitness_mode must be 'correctness' or 'total', got {self.fitness_mode!r}"
         self.batch_size = batch_size
         self.apply_chat_template = apply_chat_template
         # Qwen3 chat template defaults to enable_thinking=True (emits a
@@ -479,14 +493,53 @@ class GSMLongHorizonTask:
         examples = [self.dataset[i] for i in indices]
         return self._format_examples(examples)
 
+    def _sample_fitness(self, correctness, format_reward):
+        """The scalar EGGROLL optimizes for one rollout. Tier-1: correctness
+        only by default; set fitness_mode='total' to restore h1's
+        correctness + format sum."""
+        if self.fitness_mode == "total":
+            return correctness + format_reward
+        return correctness
+
     def get_fitness(self, generations, truncateds, gt_answer, pass_at_k: bool = False):
-        return general_get_fitness(self, generations, truncateds, gt_answer, pass_at_k)
+        # h1/DrGRPO scores truncated completions normally (it does not zero
+        # them): a truncated rollout simply tends to miss its </answer> tag and
+        # so scores low. We mirror that (truncateds unused) rather than forcing
+        # truncated -> 0 (which MathTask does).
+        if len(generations) == 0:
+            return 0.0, (), np.array([]), {}
+
+        correctness_arr, format_arr, model_answers = [], [], []
+        for g in generations:
+            c = h1_correctness_reward(g, gt_answer)      # 0.0 / CORRECT_REWARD
+            f = h1_format_reward(g, self.float_mode)     # h1 summed format reward
+            correctness_arr.append(float(c))
+            format_arr.append(float(f))
+            model_answers.append(h1_extract_answer(g))
+        correctness_arr = np.array(correctness_arr, dtype=float)
+        format_arr = np.array(format_arr, dtype=float)
+
+        sample_fitnesses = np.array(
+            [self._sample_fitness(c, f) for c, f in zip(correctness_arr, format_arr)],
+            dtype=float,
+        )
+        fitness = float(np.max(sample_fitnesses) if pass_at_k else np.mean(sample_fitnesses))
+
+        # Logging-only components (averaged across the samples in this rollout
+        # group). They flow generate_and_score -> info_dict -> wandb, so
+        # training shows correctness vs format separately even though only
+        # fitness_mode drives the ES update.
+        task_info = {
+            "reward/correctness": float(correctness_arr.mean()),
+            "reward/format": float(format_arr.mean()),
+            "reward/frac_correct": float((correctness_arr > 0).mean()),
+            "reward/total_if_summed": float((correctness_arr + format_arr).mean()),
+        }
+        return fitness, tuple(model_answers), sample_fitnesses, task_info
 
     def get_fitness_single_sample(self, generation, truncated, gt_answer):
-        # h1/DrGRPO scores truncated completions normally (it does not zero them):
-        # a rollout cut off at max_completion_length simply tends to miss its
-        # </answer> tag and so scores low on format + correctness. We mirror that
-        # rather than forcing truncated -> 0 (which MathTask does).
-        reward = h1_total_reward(generation, gt_answer, float_mode=self.float_mode)
-        model_answer = h1_extract_answer(generation)
-        return float(reward), model_answer
+        # Kept for API parity with the other tasks; mirrors get_fitness's
+        # per-sample scoring under the active fitness_mode.
+        c = h1_correctness_reward(generation, gt_answer)
+        f = h1_format_reward(generation, self.float_mode)
+        return float(self._sample_fitness(c, f)), h1_extract_answer(generation)

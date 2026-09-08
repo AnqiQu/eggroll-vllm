@@ -60,6 +60,15 @@ TEMPERATURE="${TEMPERATURE:-0.0}"        # ES explores via perturbations, not sa
 NUM_ITERATIONS="${NUM_ITERATIONS:-300}"  # ES steps per stage (h1 uses ~300)
 SAVE_FREQ="${SAVE_FREQ:-50}"             # checkpoint every N steps (h1 save_steps 50)
 
+# --- Fitness objective (Tier-1 change) ---
+# EGGROLL now optimizes CORRECTNESS ONLY by default. The instruct base model
+# already formats near-perfectly, so h1's format reward let ES climb format
+# without improving accuracy (training reward rose, eval accuracy stayed flat).
+# The format reward is still computed + logged (reward/format) -- it just no
+# longer drives the update. Set EGGROLL_FITNESS_MODE=total to restore h1's
+# original correctness+format sum.
+export EGGROLL_FITNESS_MODE="${EGGROLL_FITNESS_MODE:-correctness}"
+
 # --- Max prompt length ---
 # h1 caps prompts at 512 tokens (TRL max_prompt_length). eggroll-vllm does NOT
 # truncate prompts (vLLM sees the full chat-templated prompt), so this is a
