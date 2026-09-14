@@ -1,0 +1,32 @@
+#!/bin/bash
+#SBATCH --job-name=eggroll-h1-s1-eval-base
+#SBATCH --output=logs/eval-base-%j.out
+#SBATCH --nodes=1
+#SBATCH --gpus=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --time=00:30:00
+
+set -euo pipefail
+mkdir -p logs results
+
+source "$SCRATCH/uv_envs/vllm_env/.venv/bin/activate"
+export HF_HOME="$SCRATCH/hf_cache"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export VLLM_CACHE_ROOT="$SCRATCH/.cache/vllm_evalbase_${SLURM_JOB_ID}"
+export TRITON_CACHE_DIR="$SCRATCH/.triton_evalbase_${SLURM_JOB_ID}"
+export TORCHINDUCTOR_CACHE_DIR="$SCRATCH/.inductor_evalbase_${SLURM_JOB_ID}"
+mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
+
+cd "$SCRATCH/eggroll-vllm"
+DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl"
+
+echo "========== BASELINE: Qwen/Qwen3-1.7B (untrained) =========="
+python h1_gsm_eval.py \
+  --models Qwen/Qwen3-1.7B \
+  --datasets ${DATASETS} \
+  --instruct --tp 1 \
+  --out_file "results/stage1_len1_baseline_qwen3-1.7b.json"
+echo "BASELINE EVAL DONE"

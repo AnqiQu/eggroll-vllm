@@ -60,6 +60,15 @@ TEMPERATURE="${TEMPERATURE:-0.0}"        # ES explores via perturbations, not sa
 NUM_ITERATIONS="${NUM_ITERATIONS:-300}"  # ES steps per stage (h1 uses ~300)
 SAVE_FREQ="${SAVE_FREQ:-50}"             # checkpoint every N steps (h1 save_steps 50)
 
+# --- Fitness objective ---
+# EGGROLL_FITNESS_MODE selects the scalar ES optimizes (all components are still
+# computed + logged regardless):
+#   correctness -> h1 correctness only (default)
+#   total       -> h1's correctness + format sum (original h1 reward)
+#   gated       -> 1.0 iff correct AND well-formatted, else 0.0 (binary
+#                  all-or-nothing; EGGROLL_FORMAT_CHECK=strict|soft picks the gate)
+export EGGROLL_FITNESS_MODE="${EGGROLL_FITNESS_MODE:-correctness}"
+
 # --- Max prompt length ---
 # h1 caps prompts at 512 tokens (TRL max_prompt_length). eggroll-vllm does NOT
 # truncate prompts (vLLM sees the full chat-templated prompt), so this is a

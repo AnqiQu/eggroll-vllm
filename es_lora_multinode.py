@@ -1619,6 +1619,21 @@ def main(args: Args):
         if args.normalize_with_std:
             normalized_fitnesses = normalized_fitnesses / (normalized_fitnesses_std + 1e-8)
 
+        # --- Tier-0 diagnostic: antithetic-pair disagreement ------------------
+        # Members (2k, 2k+1) are the +noise / -noise antithetic pair (see
+        # generate_local_adapters / apply_lora_es_update). If a pair scores the
+        # SAME fitness on a prompt, that perturbation direction gave the ES
+        # update no signal on that prompt. A near-zero disagreement rate means a
+        # DEAD gradient (perturbation too small / temperature-0 greedy decoding
+        # not flipping tokens) -- which reward reshaping cannot fix; raise
+        # sigma / lora_r / temperature instead.
+        plus_fit = fitnesses_shaped[0::2]    # (P/2, num_prompts): +noise members
+        minus_fit = fitnesses_shaped[1::2]   # (P/2, num_prompts): -noise members
+        pair_disagree_rate = float(np.mean(plus_fit != minus_fit))
+        pair_absdiff_mean = float(np.mean(np.abs(plus_fit - minus_fit)))
+        print(f"PAIR DIAGNOSTIC: disagree_rate={pair_disagree_rate:.4f}, "
+              f"mean|F+ - F-|={pair_absdiff_mean:.4f}", flush=True)
+
         # Logging
         if args.verbose:
             for pop_idx in range(2):
@@ -1708,6 +1723,8 @@ def main(args: Args):
                 "min_fitness": min_fitness,
                 "max_fitness": max_fitness,
                 "std_normalized_fitness": std_normalized_fitness,
+                "pair_disagree_rate": pair_disagree_rate,
+                "pair_absdiff_mean": pair_absdiff_mean,
                 "std_in_samples": std_in_samples,
                 "pass_at_k_fitness": pass_at_k_fitness,
                 "mean_sample_fitness": mean_sample_fitness,

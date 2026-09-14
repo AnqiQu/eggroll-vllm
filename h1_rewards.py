@@ -208,3 +208,29 @@ def total_reward(response: str, answer, float_mode: bool) -> float:
     """h1's full DrGRPO total reward for a single (response, answer): correctness
     + all format rewards. This scalar is the EGGROLL fitness for the rollout."""
     return correctness_reward(response, answer) + format_reward(response, float_mode)
+
+
+def format_ok(response: str, strict: bool = True) -> bool:
+    """Whether the response is in h1's required XML format, as a hard gate.
+      strict=True  -> h1's strict_format_reward_func (exact reasoning/answer
+                      block structure with the required newlines)
+      strict=False -> h1's soft_format_reward_func (reasoning then answer,
+                      order only; tolerant of surrounding whitespace)
+    """
+    comps = _as_completions(response)
+    fn = strict_format_reward_func if strict else soft_format_reward_func
+    return fn(comps)[0] > 0.0
+
+
+def gated_reward(response: str, answer, strict_format: bool = True) -> float:
+    """Binary all-or-nothing fitness: 1.0 iff the answer is correct AND the
+    response is in the required format, else 0.0.
+
+    Collapsing correctness + format into a single hard gate (rather than a
+    weighted sum) removes the "well-formatted but wrong" and "right but
+    unformatted" partial-credit attractors, so ES can only score by producing a
+    correctly-formatted correct answer. Pair with a longer generation budget so
+    the model has room to reason its way to that answer.
+    """
+    correct = correctness_reward(response, answer) > 0.0
+    return 1.0 if (correct and format_ok(response, strict=strict_format)) else 0.0
