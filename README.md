@@ -82,6 +82,9 @@ optimiser changes.
 | `run_h1_curriculum.sh` | Curriculum runner: trains + merges one stage per invocation, then pauses for external checkpoint selection. |
 | `run_h1_smoke.sh` | Tiny end-to-end debug run (pop 8, 4 iters, 32-question subset) to validate the whole stack in minutes before a real run. |
 | `slurm_launch_gsm_longhorizon.sh` | Slurm launch script with the experiment config block (per-stage completion lengths, EGGROLL hyperparameters, equal-compute reference). |
+| `es_diagnostics.py` | Per-step ES diagnostics logged as W&B `diag/*`: which reward axis the update is aligned with, greedy-collapse / output-diversity stats, entropy and margin from top-k logprobs (`--entropy-topk`). Unit tests in `tests/`. |
+| `es_reference.py` | **Independent** plain-PyTorch re-implementation of EGGROLL (no vLLM/Ray/PEFT, fp32 master weights) with a perturbation-sensitivity `probe` mode and a small-scale `train` mode. See `PROFESSOR_FEEDBACK_NOTES.md`. |
+| `submit_probe_sensitivity.sh`, `submit_h1_stage2_len2_correctonly.sh`, `submit_h1_stage2_len2_gated_resume.sh` | Slurm jobs for the follow-up experiments in `PROFESSOR_FEEDBACK_NOTES.md` §4. |
 
 ### The task and its reward
 

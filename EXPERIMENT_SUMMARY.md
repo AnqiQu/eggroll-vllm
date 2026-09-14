@@ -97,8 +97,42 @@ The real fork (not more reward reshaping):
 test_len_1/2/3) to definitively confirm no checkpoint beats base on correctness.
 Training curves predict "no," but this is the publishable confirmation.
 
+## Update 2026-09-14 — professor feedback (see `PROFESSOR_FEEDBACK_NOTES.md`)
+Two comments from the supervisor meeting, worked through in detail in the
+notes file: (1) *not enough iterations — format is optimised first, correctness
+may follow once format plateaus*; (2) *re-implement the algorithm in your own
+code to separate algorithm / data / code issues; be mindful of entropy
+collapse*. Consequences for the table above:
+
+- **The "objective formulation refuted" conclusion is weaker than stated.** The
+  correctness-only run (#4) was on near-ceiling horizon-1, and the gated run
+  (#5) stopped while `frac_format_ok` was still climbing (77%). Neither tests
+  "correctness after format saturates". Two runs added to test it directly:
+  `submit_h1_stage2_len2_correctonly.sh` (the missing matrix cell) and
+  `submit_h1_stage2_len2_gated_resume.sh` (steps 300-899 of run #5).
+- **Candidate code issue found: bf16 rounding of the ES step.** The fp32 update
+  is added in place to bf16 engine weights; with this config the typical
+  per-entry step (~1e-5) is below half a bf16 ulp for most weights, so ~90% of
+  entries do not change and the realised step has cosine ~0.5 with the
+  intended one. Strong coherent signals (format) mostly survive; weak
+  consistent ones (correctness) are zeroed every step. Measured from now on as
+  `diag/update/*`; removable with `FP32_MASTER=1` (fp32 master weights).
+- **Entropy collapse is now monitored** (`diag/pair_identical_rate`,
+  `diag/entropy/margin` with `ENTROPY_TOPK=20`). The old `pair_disagree_rate`
+  rose partly mechanically under the binary reward and does not measure output
+  diversity.
+- **Independent re-implementation** `es_reference.py` (plain PyTorch, fp32
+  master, no vLLM/Ray/PEFT) with a `probe` mode that measures, per sigma, how
+  often a perturbation changes text / format / correctness on base vs the
+  gated `step_299` — `submit_probe_sensitivity.sh`, 1 GPU.
+
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
 - `EGGROLL_FORMAT_CHECK` = `strict` | `soft` (the format gate for gated mode)
 - W&B metrics: `reward/frac_correct`, `reward/frac_format_ok`, `reward/frac_gated`,
   `reward/total_if_summed`, `pair_disagree_rate`, `pair_absdiff_mean`
+- `ENTROPY_TOPK` (= `--entropy-topk`), `FP32_MASTER` (= `--fp32-master`),
+  `RESUME_FROM` (= `--resume-from`) in `run_h1_curriculum.sh`
+- W&B `diag/*` metrics: per-axis `*/cos_with_fitness`, `*/pairs_with_signal`,
+  `pair_identical_rate`, `pair_first_div_frac`, `distinct_outputs_frac`,
+  `entropy/*`, `update/*` (see `PROFESSOR_FEEDBACK_NOTES.md` §2.2, §3.3)

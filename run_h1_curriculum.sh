@@ -59,6 +59,14 @@ SAMPLES_PER_PROMPT="${SAMPLES_PER_PROMPT:-1}"
 TEMPERATURE="${TEMPERATURE:-0.0}"        # ES explores via perturbations, not sampling
 NUM_ITERATIONS="${NUM_ITERATIONS:-300}"  # ES steps per stage (h1 uses ~300)
 SAVE_FREQ="${SAVE_FREQ:-50}"             # checkpoint every N steps (h1 save_steps 50)
+# --- Diagnostics / resume (see PROFESSOR_FEEDBACK_NOTES.md) ---
+ENTROPY_TOPK="${ENTROPY_TOPK:-0}"        # >0: request top-k logprobs from vLLM and log
+                                         # diag/entropy/* (margin, entropy) each step.
+                                         # 20 is plenty; costs a little generation time.
+RESUME_FROM="${RESUME_FROM:-}"           # path to checkpoint_step_N to continue a run;
+                                         # NUM_ITERATIONS is the ABSOLUTE final step count.
+FP32_MASTER="${FP32_MASTER:-}"           # non-empty: keep an fp32 master copy of the ES-updated
+                                         # weights (CPU) so sub-bf16-ulp steps accumulate.
 
 # --- Fitness objective ---
 # EGGROLL_FITNESS_MODE selects the scalar ES optimizes (all components are still
@@ -135,6 +143,16 @@ fi
 NORMALIZE_FLAG=""
 [[ -n "$NORMALIZE_WITH_STD" ]] && NORMALIZE_FLAG="--${NORMALIZE_WITH_STD}"
 
+# Optional: continue a previous run from one of its checkpoints.
+FP32_FLAG=""
+[[ -n "$FP32_MASTER" ]] && FP32_FLAG="--fp32-master"
+
+RESUME_FLAG=""
+if [[ -n "$RESUME_FROM" ]]; then
+    [[ -f "$RESUME_FROM/model_weights.safetensors" ]] || { echo "RESUME_FROM=$RESUME_FROM has no model_weights.safetensors" >&2; exit 1; }
+    RESUME_FLAG="--resume-from ${RESUME_FROM}"
+fi
+
 # Optional: cap the number of training questions (handy for smoke tests).
 SUBSET_FLAG=""
 [[ -n "${SUB_DATASET_SIZE:-}" ]] && SUBSET_FLAG="--sub-dataset-size ${SUB_DATASET_SIZE}"
@@ -155,6 +173,7 @@ echo "   base model            : $BASE_MODEL"
 echo "   train file            : $TRAIN_FILE"
 echo "   max_completion_length : $STAGE_MAXTOK   reward_mode: $STAGE_RMODE"
 echo "   population/sigma/lr/r  : $POPULATION_SIZE / $SIGMA / $LEARNING_RATE / $LORA_R   (TUNE)"
+echo "   fitness mode          : $EGGROLL_FITNESS_MODE   entropy_topk: $ENTROPY_TOPK   fp32_master: ${FP32_MASTER:-off}   resume: ${RESUME_FROM:-none}"
 echo "   checkpoints -> $CKPT_DIR"
 echo "=========================================================================="
 
@@ -183,7 +202,10 @@ python es_lora_multinode.py \
     --prompt-batch-size "$PROMPT_BATCH_SIZE" \
     --samples-per-prompt "$SAMPLES_PER_PROMPT" \
     --temperature "$TEMPERATURE" \
+    --entropy-topk "$ENTROPY_TOPK" \
+    $FP32_FLAG \
     $NORMALIZE_FLAG \
+    $RESUME_FLAG \
     $SUBSET_FLAG \
     $WANDB_FLAGS \
     --steps-per-eval -1 \
