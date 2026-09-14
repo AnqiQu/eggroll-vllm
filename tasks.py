@@ -390,6 +390,7 @@ from h1_rewards import (
     extract_answer_from_text as h1_extract_answer,
     correctness_reward as h1_correctness_reward,
     format_reward as h1_format_reward,
+    format_ok as h1_format_ok,
 )
 
 
@@ -418,19 +419,23 @@ class GSMLongHorizonTask:
         self.data_path = data_path
         self.reward_mode = reward_mode
         self.float_mode = (reward_mode == "float")
-        # --- Fitness objective (Tier-1) ---------------------------------------
-        # The scalar EGGROLL actually optimizes per rollout:
+        # --- Fitness objective ------------------------------------------------
+        # The scalar EGGROLL actually optimizes per rollout (EGGROLL_FITNESS_MODE):
         #   "correctness" -> h1 correctness reward ONLY (0.0 / CORRECT_REWARD)
         #   "total"       -> h1's correctness + format reward (original h1 sum)
-        # Default is correctness-only: the instruct base model already formats
-        # near-perfectly, so including the format reward let ES climb format
-        # without improving accuracy. The format reward is still COMPUTED and
-        # logged (reward/format) -- it just no longer drives the ES update.
-        # Override at runtime with EGGROLL_FITNESS_MODE=total.
+        #   "gated"       -> 1.0 iff correct AND well-formatted, else 0.0 (binary
+        #                    all-or-nothing; removes partial-credit attractors)
+        # All components are always COMPUTED and logged (reward/correctness,
+        # reward/format, reward/frac_correct, reward/frac_format_ok,
+        # reward/frac_gated) regardless of which one drives the ES update.
         import os
         self.fitness_mode = os.environ.get("EGGROLL_FITNESS_MODE", fitness_mode)
-        assert self.fitness_mode in ("correctness", "total"), \
-            f"fitness_mode must be 'correctness' or 'total', got {self.fitness_mode!r}"
+        assert self.fitness_mode in ("correctness", "total", "gated"), \
+            f"fitness_mode must be 'correctness', 'total' or 'gated', got {self.fitness_mode!r}"
+        # For "gated": which format check counts as well-formatted. "strict" =
+        # h1's exact XML structure; "soft" = reasoning-then-answer order only.
+        # Toggle with EGGROLL_FORMAT_CHECK=soft.
+        self.strict_format = os.environ.get("EGGROLL_FORMAT_CHECK", "strict") == "strict"
         self.batch_size = batch_size
         self.apply_chat_template = apply_chat_template
         # Qwen3 chat template defaults to enable_thinking=True (emits a
@@ -493,12 +498,15 @@ class GSMLongHorizonTask:
         examples = [self.dataset[i] for i in indices]
         return self._format_examples(examples)
 
-    def _sample_fitness(self, correctness, format_reward):
-        """The scalar EGGROLL optimizes for one rollout. Tier-1: correctness
-        only by default; set fitness_mode='total' to restore h1's
-        correctness + format sum."""
+    def _sample_fitness(self, correctness, format_reward, format_ok):
+        """The scalar EGGROLL optimizes for one rollout:
+          correctness -> h1 correctness only (0.0 / CORRECT_REWARD)   [default]
+          total       -> h1's correctness + format sum
+          gated       -> 1.0 iff correct AND well-formatted, else 0.0 (binary)"""
         if self.fitness_mode == "total":
             return correctness + format_reward
+        if self.fitness_mode == "gated":
+            return 1.0 if (correctness > 0.0 and format_ok) else 0.0
         return correctness
 
     def get_fitness(self, generations, truncateds, gt_answer, pass_at_k: bool = False):
@@ -509,30 +517,39 @@ class GSMLongHorizonTask:
         if len(generations) == 0:
             return 0.0, (), np.array([]), {}
 
-        correctness_arr, format_arr, model_answers = [], [], []
+        correctness_arr, format_arr, ok_arr, model_answers = [], [], [], []
         for g in generations:
-            c = h1_correctness_reward(g, gt_answer)      # 0.0 / CORRECT_REWARD
-            f = h1_format_reward(g, self.float_mode)     # h1 summed format reward
+            c = h1_correctness_reward(g, gt_answer)          # 0.0 / CORRECT_REWARD
+            f = h1_format_reward(g, self.float_mode)         # h1 summed format reward
+            ok = h1_format_ok(g, strict=self.strict_format)  # format gate (bool)
             correctness_arr.append(float(c))
             format_arr.append(float(f))
+            ok_arr.append(bool(ok))
             model_answers.append(h1_extract_answer(g))
         correctness_arr = np.array(correctness_arr, dtype=float)
         format_arr = np.array(format_arr, dtype=float)
+        ok_arr = np.array(ok_arr, dtype=bool)
 
         sample_fitnesses = np.array(
-            [self._sample_fitness(c, f) for c, f in zip(correctness_arr, format_arr)],
+            [self._sample_fitness(c, f, ok)
+             for c, f, ok in zip(correctness_arr, format_arr, ok_arr)],
             dtype=float,
         )
         fitness = float(np.max(sample_fitnesses) if pass_at_k else np.mean(sample_fitnesses))
 
         # Logging-only components (averaged across the samples in this rollout
-        # group). They flow generate_and_score -> info_dict -> wandb, so
-        # training shows correctness vs format separately even though only
-        # fitness_mode drives the ES update.
+        # group). They flow generate_and_score -> info_dict -> wandb, so training
+        # shows every component regardless of which one drives the ES update.
+        # frac_gated == fraction of rollouts that are BOTH correct and
+        # well-formatted (the mean of the "gated" reward) -- watch it for
+        # sparsity when fitness_mode="gated".
+        gated_arr = (correctness_arr > 0) & ok_arr
         task_info = {
             "reward/correctness": float(correctness_arr.mean()),
             "reward/format": float(format_arr.mean()),
             "reward/frac_correct": float((correctness_arr > 0).mean()),
+            "reward/frac_format_ok": float(ok_arr.mean()),
+            "reward/frac_gated": float(gated_arr.mean()),
             "reward/total_if_summed": float((correctness_arr + format_arr).mean()),
         }
         return fitness, tuple(model_answers), sample_fitnesses, task_info
@@ -542,4 +559,5 @@ class GSMLongHorizonTask:
         # per-sample scoring under the active fitness_mode.
         c = h1_correctness_reward(generation, gt_answer)
         f = h1_format_reward(generation, self.float_mode)
-        return float(self._sample_fitness(c, f)), h1_extract_answer(generation)
+        ok = h1_format_ok(generation, strict=self.strict_format)
+        return float(self._sample_fitness(c, f, ok)), h1_extract_answer(generation)
