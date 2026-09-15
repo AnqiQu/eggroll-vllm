@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # Vendored from LongHorizonReasoning/h1 (h1/gsm_eval.py) for the EGGROLL
 # GSM-LongHorizon replication, so a clone of this repo is self-contained for
-# between-stage checkpoint selection. The ONLY change from upstream is passing
-# enable_thinking=False in create_prompt() so evaluation matches the
+# between-stage checkpoint selection. Changes from upstream: (1) passing
+# enable_thinking=False in create_prompt() so evaluation matches the training
+# prompt format; (2) extract_answer_from_text() no longer discards an extracted
+# answer of 0 (see the NOTE inside it). Otherwise the ONLY change is (1), i.e.
 # (non-thinking) training format on Qwen3 models (no-op for Qwen2.5).
 
 import re
@@ -149,7 +151,16 @@ class GSM8KEvaluator:
             return text_float
         except ValueError:
             pass
-        return self._extract_xml_answer(text) or self._legacy_extract_answer(text)
+        # NOTE (local fix vs upstream h1): upstream uses
+        #     return self._extract_xml_answer(text) or self._legacy_extract_answer(text)
+        # which discards a correctly extracted answer of 0 (0.0 is falsy) and
+        # falls through to the legacy heuristics, which then usually return None
+        # -> the sample is scored as "no answer" even when the model wrote
+        # <answer>0</answer>. Check for None explicitly instead.
+        xml_answer = self._extract_xml_answer(text)
+        if xml_answer is not None:
+            return xml_answer
+        return self._legacy_extract_answer(text)
 
     @staticmethod
     def extract_answer_from_solution(solution: str) -> float:

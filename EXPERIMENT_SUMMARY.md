@@ -35,7 +35,7 @@ see whether ES can improve multi-hop reasoning accuracy.
 | 3 | Diagnostics added | pair-disagreement metric + per-component reward logging | Confirmed gradient signal is healthy (see below). |
 | 4 | **Correctness-only** fitness, stage-1 (job 6405644) | pop-128, format dropped from objective | **Correctness flat ~0.81** — but horizon-1 is near-ceiling, so this was the wrong testbed. |
 | 5 | **Gated** reward, **horizon-2** (job 6455002) | pop-256, 2048-tok gen, from base, soft format gate | **Objective rose 3%→29%, but 100% from format; correctness flat ~37% (= base).** See below. |
-| 6 | Held-out eval | base + 6 checkpoints × test_len_1/2/3 | **Set up, pending** (last confirmed state). |
+| 6 | Held-out eval | base + 6 checkpoints × test_len_1/2/3 | **Done. No checkpoint beats base on correctness** (test_len_2: base 38.6%, step_299 39.2%, all within ±1 pt after the evaluator zero-fix). Format was learned on held-out too (soft-format 0.2% → 82%). See "Held-out eval" below. |
 
 ## The core problem
 **Under EGGROLL, the reward goes up but correctness does not.** Every gain comes
@@ -57,6 +57,35 @@ answers it was already getting right; it never made more answers correct.
 This is the same failure mode as the horizon-1 full-reward run (format-hacking),
 now confirmed on a harder horizon where there was genuine correctness headroom
 (37% → 60-75% was available and untouched).
+
+## Held-out eval of the horizon-2 gated run (2026-09-15)
+`python analyze_heldout.py --splits len_2 results/len2_gated_base.json results/len2_gated_step_*.json`
+(paired on the same 482 test_len_2 questions; numbers after `rescore_heldout.py`):
+
+| checkpoint | acc | fixed | broke | net | soft-format | chars |
+|---|---|---|---|---|---|---|
+| base | 38.6% | – | – | – | 0.2% | 1088 |
+| step_100 | 34.9% | 49 | 69 | −20 | 39% | 953 |
+| step_200 | 39.2% | 66 | 65 | +1 | 63% | 989 |
+| step_299 | 39.2% | 63 | 63 | 0 | 82% | 972 |
+
+Three things the accuracy column alone hides:
+- **Correctness is not frozen — it churns.** By step_299 the model flips the
+  outcome on 126 of 482 questions (63 wrong→right, 63 right→wrong) with net
+  zero. Training *does* move correctness a lot; it has no consistent direction
+  along that axis. So "ES cannot reach correctness directions" is the wrong
+  picture; "the correctness component of the update has no signal" is closer.
+- **Format transferred to held-out** (0.2% → 82% soft-format) and outputs got
+  ~10% shorter. In the sampled right→wrong cases the step_299 model writes a
+  shorter chain and drops a hop of the chained problem.
+- **Evaluator fix:** the vendored `h1_gsm_eval.py` discarded an extracted answer
+  of `0` (Python falsy) and scored it as "no answer" (upstream h1 has the same
+  bug). Fixed; effect ≤ 1 pt everywhere. `rescore_heldout.py` re-scores old
+  files offline.
+
+The stage-1 pop-1024 checkpoints (full h1 reward, trained on horizon-1) show a
+small positive net on test_len_2 at some steps (+13…+16 at steps 50/200/250,
+i.e. ~41–42% vs 38.6%) but not monotonically; too small to build on.
 
 ## Hypotheses tested and ruled out
 - **Implementation bug** → ruled out by full code review (exp #2).

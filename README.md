@@ -77,7 +77,7 @@ optimiser changes.
 | --- | --- |
 | `h1_math_utils.py` | **Verbatim** copy of `h1/math_utils.py` (`grade_answer` etc.), used as the answer comparator for the correctness reward. |
 | `h1_rewards.py` | h1's reward + answer-extraction functions (verbatim from `h1/grpo.py`) plus thin adapters that score a single response and sum them into a scalar fitness. |
-| `h1_gsm_eval.py` | **Vendored** copy of h1's `gsm_eval.py` (the between-stage checkpoint selector), so a clone of this repo is self-contained. Only change vs upstream: `enable_thinking=False` for Qwen3 (see below). |
+| `h1_gsm_eval.py` | **Vendored** copy of h1's `gsm_eval.py` (the between-stage checkpoint selector), so a clone of this repo is self-contained. Changes vs upstream: `enable_thinking=False` for Qwen3 (see below), and a fix so an extracted answer of `0` is not discarded as "no answer" (`rescore_heldout.py` re-scores old result files offline; `analyze_heldout.py` gives paired fixed/broke/format tables). |
 | `tasks.py` → `GSMLongHorizonTask` | New task: h1's prompts + h1's total DrGRPO reward as EGGROLL fitness. |
 | `run_h1_curriculum.sh` | Curriculum runner: trains + merges one stage per invocation, then pauses for external checkpoint selection. |
 | `run_h1_smoke.sh` | Tiny end-to-end debug run (pop 8, 4 iters, 32-question subset) to validate the whole stack in minutes before a real run. |
