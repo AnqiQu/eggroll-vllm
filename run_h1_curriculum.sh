@@ -65,7 +65,7 @@ ENTROPY_TOPK="${ENTROPY_TOPK:-0}"        # >0: request top-k logprobs from vLLM 
                                          # 20 is plenty; costs a little generation time.
 RESUME_FROM="${RESUME_FROM:-}"           # path to checkpoint_step_N to continue a run;
                                          # NUM_ITERATIONS is the ABSOLUTE final step count.
-FP32_MASTER="${FP32_MASTER:-}"           # non-empty: keep an fp32 master copy of the ES-updated
+FP32_MASTER="${FP32_MASTER:-}"           # non-empty (and not "0"): keep an fp32 master copy of the ES-updated
                                          # weights (CPU) so sub-bf16-ulp steps accumulate.
 
 # --- Fitness objective ---
@@ -145,6 +145,7 @@ NORMALIZE_FLAG=""
 
 # Optional: continue a previous run from one of its checkpoints.
 FP32_FLAG=""
+[[ "$FP32_MASTER" == "0" ]] && FP32_MASTER=""   # accept FP32_MASTER=0 as "off"
 [[ -n "$FP32_MASTER" ]] && FP32_FLAG="--fp32-master"
 
 RESUME_FLAG=""

@@ -15,14 +15,23 @@
 # here after 600 steps, iteration count / format masking is not the story.
 #
 # Also the cleanest place to compare bf16 vs fp32-master updates: run once with
-# FP32_MASTER=1 (default here) and once with FP32_MASTER= (empty) and compare
-# diag/update/applied_frac and reward/frac_correct.
+# FP32_MASTER=1 (default here) and once with FP32_MASTER=0 (or FP32_MASTER=
+# empty) and compare diag/update/applied_frac and reward/frac_correct.
+#
+# Each arm lands in its own directory: OUTPUT_ROOT is derived from the arm, e.g.
+#   sbatch submit_h1_stage2_len2_correctonly.sh                    -> runs/h1_curriculum_len2_correctonly_fp32master_sigma0.001
+#   FP32_MASTER=0 sbatch submit_h1_stage2_len2_correctonly.sh      -> runs/h1_curriculum_len2_correctonly_bf16_sigma0.001
+#   SIGMA=0.0003 LEARNING_RATE=0.00006 sbatch submit_h1_stage2_len2_correctonly.sh
+#                                                                  -> runs/h1_curriculum_len2_correctonly_fp32master_sigma0.0003
 #
 # Watch: reward/frac_correct (the objective), diag/frac_correct/pairs_with_signal
 # (how many antithetic pairs disagree on correctness -- the raw ES signal),
 # diag/pair_identical_rate + diag/entropy/margin (collapse monitors).
 POP=256
-FP32_MASTER="${FP32_MASTER:-1}"
+# NOTE: "${FP32_MASTER-1}" (no colon) so that an explicitly EMPTY value is kept
+# (":-" would silently turn FP32_MASTER= back into 1). "0" also means off.
+FP32_MASTER="${FP32_MASTER-1}"
+[[ "$FP32_MASTER" == "0" ]] && FP32_MASTER=""
 # Optional sigma / lr override. The probe (results/probe_len2_base.json) shows
 # sigma=1e-3 already LOWERS accuracy under a random perturbation (40.6% ->
 # 37.5%) and 3e-3 is destructive (-> 15%), so a SMALLER sigma is the arm worth

@@ -301,7 +301,9 @@ Two ways to test it on the real pipeline, both added:
   bf16-rounded master is written back to the engine. Per-step `applied_frac`
   will still look low (bf16 storage is still quantised) but nothing is lost
   across steps. `submit_h1_stage2_len2_correctonly.sh` defaults to
-  `FP32_MASTER=1`; run it once with `FP32_MASTER=` (empty) for the A/B.
+  `FP32_MASTER=1`; run it once with `FP32_MASTER=0` for the A/B (an empty
+  value also means off; the script uses `${FP32_MASTER-1}` without the colon
+  so an explicitly empty value is not silently re-defaulted to 1).
 
 Memory: an fp32 master of the 1.7B target weights is ~5.6 GB of host RAM;
 resuming from a checkpoint re-initialises the master from the saved bf16
@@ -387,8 +389,9 @@ paying for format.
 1. ~~`sbatch submit_probe_sensitivity.sh`~~ **done** (Section 3.4): no
    collapse, plenty of correctness signal, sigma cannot go up.
 2. `sbatch submit_h1_stage2_len2_correctonly.sh` three ways (4 GPU each,
-   separate output dirs):
-   `FP32_MASTER=1` (default), `FP32_MASTER=` (bf16 A/B), and
+   separate output dirs, derived automatically as
+   `runs/h1_curriculum_len2_correctonly_{fp32master|bf16}_sigma<sigma>`):
+   `FP32_MASTER=1` (default), `FP32_MASTER=0` (bf16 A/B), and
    `SIGMA=0.0003 LEARNING_RATE=0.00006` (smaller sigma, fp32 master).
    Watch `reward/frac_correct`, `diag/frac_correct/cos_with_fitness` (should be
    ~1 since correctness is the only axis), `diag/update/applied_frac`.
