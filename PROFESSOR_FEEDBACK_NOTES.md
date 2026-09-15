@@ -384,6 +384,49 @@ there), with the fp32-master A/B, plus a sigma = 3e-4 arm. The gated resume is
 still the literal test of "run longer", but points 4-5 predict it will keep
 paying for format.
 
+## 3.5 Is the fp32 master "against the point" of EGGROLL? (2026-09-15)
+
+Checked against the authors' own code rather than the paper text (arxiv is
+blocked from the sandbox; `ESHyperscale/nano-egg` was cloned read-only).
+
+* **This repo is the official LLM code** (README: "official code for the
+  transformer LLM experiments"), and its update path is the same bf16 in-place
+  add we measured. The official launch recipe (`slurm_launch_base_n1.sh`:
+  Qwen3-4B, sigma 1e-3, lr 2e-4, pop 1024, prompt batch 16, r 1,
+  `--normalize-with-std`, no `--scale-lr-in-grad`) gives a per-entry step of
+  roughly lr/sqrt(P) ~ 6e-6, i.e. *smaller* than our 256-member runs (~1.2e-5),
+  against a bf16 half-ulp of ~6e-5 for |w| ~ 0.02. So the paper's own LLM
+  results were obtained under the same rounding: the update that lands is a
+  sparsified, magnitude-thresholded version of the intended one (only entries
+  with |w| below a few 1e-3 can move at all in one step). Learning still
+  happened there, so the rounding is lossy, not fatal; the A/B is informative,
+  not decisive by construction.
+* **The paper's pure-int8 result does not use silent rounding.** `nano-egg`'s
+  update (`_common_update`, `convert_fitnesses`) is a deliberately discrete
+  rule: per antithetic pair the fitness is sign(F+ - F-); per weight entry an
+  integer vote Z = sum_k sign(dF_k) * sign(noise_k) is accumulated; the weight
+  moves by exactly one integer quantum in the direction of Z if |Z| exceeds a
+  Z-test threshold scaled by sqrt(pop), otherwise it does not move. The
+  README calls `alpha` (the fraction of parameters allowed to move per step)
+  "analogous to learning rate". No fp32 copy, no accumulator, but also no
+  lost updates: the step is always one representable unit. bf16
+  round-to-nearest with sub-ulp steps is an *uncontrolled* version of the same
+  idea, with the threshold set by |w| (ulp grows with the weight) rather than by
+  statistical significance, and with no control of the moving fraction.
+* **Verdict.** The fp32 master does not touch what EGGROLL is for (low-rank
+  perturbations so the population is cheap; forward passes only, so it runs on
+  an inference engine in bf16). It only changes how the population *centre* is
+  stored between steps, which is the standard mixed-precision recipe. It does
+  give up "no extra state" (4 bytes/param on the CPU). If the fp32 arm wins,
+  the in-spirit follow-ups are (a) stochastic rounding of the bf16 add
+  (unbiased, no extra memory) or (b) porting the int8 thresholded one-ulp rule
+  to bf16; (c) `--scale-lr-in-grad` (multiplies the step by sqrt(P), so the
+  per-entry step is ~lr instead of lr/sqrt(P)) lifts steps above the ulp but is
+  a learning-rate change, not a precision fix.
+* Related: "EGGROLL, Unrolled" (arXiv 2609.10980, Sep 2026) analyses the
+  rank-1 geometry and proposes a leave-one-out estimator (LOO-ROLL) that halves
+  estimator MSE at equal cost; not read in full (blocked), flagged for later.
+
 ## 4. Suggested order
 
 1. ~~`sbatch submit_probe_sensitivity.sh`~~ **done** (Section 3.4): no
