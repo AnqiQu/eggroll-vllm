@@ -155,6 +155,23 @@ collapse*. Consequences for the table above:
   often a perturbation changes text / format / correctness on base vs the
   gated `step_299` — `submit_probe_sensitivity.sh`, 1 GPU.
 
+## Perturbation-sensitivity probe (2026-09-15, `results/probe_len2_*.json`)
+`es_reference.py probe` on base vs the gated `step_299`, 32 train_len_2 prompts,
+8 antithetic pairs per sigma (full table in `PROFESSOR_FEEDBACK_NOTES.md` §3.4):
+- **No entropy collapse:** greedy margin 18.4 → 17.9 nats, entropy 0.063 →
+  0.070, close-race tokens 1.5% → 1.5%, zero identical pairs.
+- **Correctness is very perturbable at σ=1e-3:** 26% of antithetic pair-prompt
+  comparisons disagree on correctness. Signal quantity is not the bottleneck.
+- **σ=1e-3 is already destructive on average** (perturbed accuracy 40.6% →
+  37.5%; σ=3e-3 → 15%; σ≥1e-2 → 0%). Larger σ is ruled out; a smaller σ arm
+  (3e-4, lr scaled, fp32 master) is the one to try.
+- **Format is partly learnable by damage:** at σ=3e-3, 39% of broken base
+  outputs match the soft format (base 0%), consistent with echoing the prompt's
+  template. Format at step_299 is fragile (21% of perturbations break it), so
+  the gated objective never stops spending the update on format.
+- Priority is now the correctness-only horizon-2 run (three arms: fp32 master,
+  bf16, σ=3e-4), then the gated resume.
+
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
 - `EGGROLL_FORMAT_CHECK` = `strict` | `soft` (the format gate for gated mode)

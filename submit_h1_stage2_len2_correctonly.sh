@@ -23,6 +23,13 @@
 # diag/pair_identical_rate + diag/entropy/margin (collapse monitors).
 POP=256
 FP32_MASTER="${FP32_MASTER:-1}"
+# Optional sigma / lr override. The probe (results/probe_len2_base.json) shows
+# sigma=1e-3 already LOWERS accuracy under a random perturbation (40.6% ->
+# 37.5%) and 3e-3 is destructive (-> 15%), so a SMALLER sigma is the arm worth
+# trying, with lr scaled down in proportion so the step size in units of sigma
+# is unchanged:   SIGMA=0.0003 LEARNING_RATE=0.00006 sbatch submit_h1_stage2_len2_correctonly.sh
+SIGMA="${SIGMA:-0.001}"
+LEARNING_RATE="${LEARNING_RATE:-0.0002}"
 
 set -euo pipefail
 mkdir -p logs
@@ -42,11 +49,13 @@ export EGGROLL_FITNESS_MODE=correctness
 cd "$SCRATCH/eggroll-vllm"
 
 SUFFIX="bf16"; [[ -n "$FP32_MASTER" ]] && SUFFIX="fp32master"
+SUFFIX="${SUFFIX}_sigma${SIGMA}"
 
 # Stage default completion length (1024) is kept: the 2048 budget was inert
 # (outputs stayed ~320 tokens). 600 steps from base.
 BASE_MODEL=Qwen/Qwen3-1.7B USE_WANDB=1 WANDB_PROJECT=eggroll-h1 \
   POPULATION_SIZE="$POP" PROMPT_BATCH_SIZE=8 NUM_ITERATIONS=600 \
+  SIGMA="$SIGMA" LEARNING_RATE="$LEARNING_RATE" \
   ENTROPY_TOPK=20 FP32_MASTER="$FP32_MASTER" \
   OUTPUT_ROOT="runs/h1_curriculum_len2_correctonly_${SUFFIX}" \
   STAGE=2 ./run_h1_curriculum.sh

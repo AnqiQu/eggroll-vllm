@@ -309,18 +309,94 @@ weights (sub-ulp residue is lost at that point only).
 
 ---
 
+## 3.4 Probe results (2026-09-15, `results/probe_len2_*.json`)
+
+32 `train_len_2` prompts, 8 antithetic pairs per sigma, rank 1, greedy, 1024
+tokens. "Perturbed accuracy" = accuracy of the perturbed model averaged over
+the 16 perturbed copies.
+
+| | base Qwen3-1.7B | gated `step_299` |
+| --- | --- | --- |
+| accuracy on the 32 prompts | 40.6% | 28.1% |
+| soft-format rate | 0% | 97% |
+| mean tokens | 340 | 292 |
+| greedy margin (nats, mean) | 18.4 | 17.9 |
+| tokens with margin < 0.5 | 1.5% | 1.5% |
+| entropy (nats/token) | 0.063 | 0.070 |
+| **sigma = 1e-3** (the training sigma) | | |
+| text changed by a perturbation | 99.6% | 99.8% |
+| first divergence (fraction of output) | 8% | 11% |
+| correctness fixed / broke | 8.0% / 11.1% | 13.7% / 9.4% |
+| perturbed accuracy | 37.5% | 32.4% |
+| pairs disagreeing on correctness | 26% | 27% |
+| pairs disagreeing on format | 16% | 37% |
+| identical text within a pair | 0% | 0% |
+| **sigma = 3e-3** | | |
+| perturbed accuracy | 14.6% | 12.5% |
+| soft-format among perturbed outputs | 39% | 67% |
+| **sigma >= 1e-2** | | |
+| perturbed accuracy | 0% | 0% |
+
+What this settles:
+
+1. **No entropy collapse.** Margin, entropy and the share of close-race tokens
+   are the same before and after 300 gated steps; no antithetic pair produced
+   identical text at any sigma; a perturbation changes the text 99.8% of the
+   time. The run did not go deterministic. "Run longer" is not blocked by
+   collapse.
+2. **Correctness signal is plentiful, not absent.** At the training sigma,
+   26% of pair-prompt comparisons disagree on correctness. With 128 pairs x 8
+   prompts that is ~260 correctness disagreements per ES step. The problem is
+   not that ES cannot see correctness.
+3. **sigma = 1e-3 is already in the destructive regime, so a larger sigma is
+   off the table.** A random perturbation of that size breaks 27% of the
+   answers the base gets right and fixes 13% of the ones it gets wrong; the
+   average perturbed model is 3 points *worse* than the centre. At 3e-3 it is
+   26 points worse, at 1e-2 everything is wrong. The fitness response to
+   +eps / -eps is dominated by symmetric breakage (both sides get worse), which
+   the antithetic difference cancels but which leaves the sign of each pair's
+   difference close to a coin flip. That is the low signal-to-noise picture:
+   lots of disagreement, little consistent direction. Combined with the
+   held-out churn (63 fixed / 63 broke, net 0), it says ES is random-walking on
+   the correctness axis. The arm worth trying is a *smaller* sigma (3e-4) with
+   lr scaled down to match, which needs the fp32 master to survive bf16.
+4. **Format is partly "learnable by damage".** Perturbing the base at 3e-3
+   collapses accuracy to 15% yet 39% of those broken outputs match the soft
+   format (base: 0%). The likely mechanism is the degraded model echoing the
+   format template that the system prompt spells out. Directions that damage
+   the model therefore look good on the format axis. `--save-examples` on the
+   probe now stores output triples so this can be read directly.
+5. **Format at step_299 is fragile** (21% of perturbations break it, 37% of
+   pairs disagree on it), so under the gated reward the format axis does not
+   "saturate" and stop contributing: the update keeps being spent on repairing
+   format. The professor's sequential picture is right in spirit but the
+   hand-off to correctness may never come under that objective.
+6. `step_299` is worse than base on training prompts here (28% vs 41% on 32
+   prompts; noisy, but the sign matches held-out) and a random perturbation of
+   it *improves* correctness on average. Format training pushed it downhill on
+   the correctness axis.
+
+Consequences for the plan: the correctness-only horizon-2 run is now the
+priority (no format axis to spend the update on; the probe says the signal is
+there), with the fp32-master A/B, plus a sigma = 3e-4 arm. The gated resume is
+still the literal test of "run longer", but points 4-5 predict it will keep
+paying for format.
+
 ## 4. Suggested order
 
-1. `sbatch submit_probe_sensitivity.sh` (1 GPU, ~2 h). Answers "is
-   correctness perturbable at sigma=1e-3?" and "did the gated run collapse?"
-   before spending 4-GPU-days.
-2. `es_reference.py train --task sanity` (1 GPU, minutes). Confirms the
-   independent loop works at all.
-3. `sbatch submit_h1_stage2_len2_correctonly.sh` with `FP32_MASTER=1` and
-   again with `FP32_MASTER=` (4 GPU each). Fills the missing cell and does the
-   precision A/B in one go.
-4. `sbatch submit_h1_stage2_len2_gated_resume.sh` (4 GPU). The literal
-   "run longer" test, with the collapse monitors on.
+1. ~~`sbatch submit_probe_sensitivity.sh`~~ **done** (Section 3.4): no
+   collapse, plenty of correctness signal, sigma cannot go up.
+2. `sbatch submit_h1_stage2_len2_correctonly.sh` three ways (4 GPU each,
+   separate output dirs):
+   `FP32_MASTER=1` (default), `FP32_MASTER=` (bf16 A/B), and
+   `SIGMA=0.0003 LEARNING_RATE=0.00006` (smaller sigma, fp32 master).
+   Watch `reward/frac_correct`, `diag/frac_correct/cos_with_fitness` (should be
+   ~1 since correctness is the only axis), `diag/update/applied_frac`.
+3. `sbatch submit_h1_stage2_len2_gated_resume.sh` (4 GPU) if budget allows:
+   the literal "run longer" test. Prediction from the probe: format keeps
+   absorbing the update (`diag/frac_format_ok/pairs_with_signal` stays high).
+4. `es_reference.py probe --save-examples 8` on 8 prompts (1 GPU, minutes) to
+   read what the sigma = 3e-3 "formatted but wrong" outputs look like.
 5. `es_reference.py train --task gsm` small run vs. the pipeline at equal
    settings (1 GPU). The "own code" comparison proper.
 

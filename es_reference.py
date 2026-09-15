@@ -355,6 +355,7 @@ def run_probe(args) -> None:
         t0 = time.time()
         text_changed, c_fixed, c_broke, ok_changed, first_div = [], [], [], [], []
         pair_fit, pair_c, pair_ok, pair_same = [], [], [], []
+        examples = []
         for j in range(args.n_perturb):
             per_sign = {}
             for sign in (+1, -1):
@@ -364,6 +365,11 @@ def run_probe(args) -> None:
             es.restore()
             for n in range(N):
                 (tp, ip, (fp, cp)), (tm, im, (fm, cm)) = per_sign[+1][n], per_sign[-1][n]
+                if len(examples) < args.save_examples:
+                    examples.append({"prompt_idx": n, "answer": str(answers[n]),
+                                     "base": base_texts[n], "base_correct": bool(base_correct[n]),
+                                     "plus": tp, "plus_correct": bool(cp["correct"]), "plus_format_ok": bool(cp["format_ok"]),
+                                     "minus": tm, "minus_correct": bool(cm["correct"]), "minus_format_ok": bool(cm["format_ok"])})
                 for t, i, comp in ((tp, ip, cp), (tm, im, cm)):
                     text_changed.append(t != base_texts[n])
                     c_fixed.append(base_correct[n] == 0 and comp["correct"] == 1)
@@ -381,6 +387,7 @@ def run_probe(args) -> None:
             "p_correct_fixed": float(np.mean(c_fixed)),      # base wrong -> perturbed right
             "p_correct_broke": float(np.mean(c_broke)),      # base right -> perturbed wrong
             "p_correct_changed": float(np.mean(c_fixed) + np.mean(c_broke)),
+            "perturbed_accuracy": float(base_correct.mean() + np.mean(c_fixed) - np.mean(c_broke)),
             "p_format_changed": float(np.mean(ok_changed)),
             "first_div_frac_mean": float(np.mean(first_div)) if first_div else 1.0,
             "pair_fitness_disagree": float(np.mean(pair_fit)),
@@ -389,6 +396,8 @@ def run_probe(args) -> None:
             "pair_identical_text": float(np.mean(pair_same)),
             "seconds": time.time() - t0,
         }
+        if examples:
+            summary["examples"] = examples
         result["sigmas"][str(sigma)] = summary
         print(f"[probe] sigma={sigma:g}: text_changed={summary['p_text_changed']:.3f} "
               f"correct fixed/broke={summary['p_correct_fixed']:.3f}/{summary['p_correct_broke']:.3f} "
@@ -507,6 +516,8 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--sigmas", type=float, nargs="+", default=[0.001, 0.003, 0.01])
     pp.add_argument("--n-perturb", type=int, default=8, help="antithetic pairs per sigma")
     pp.add_argument("--prompt-offset", type=int, default=0)
+    pp.add_argument("--save-examples", type=int, default=0,
+                    help="store this many (base, +eps, -eps) output triples per sigma in the JSON, for reading")
 
     pt = sub.add_parser("train", help="small-scale ES loop")
     common(pt)
