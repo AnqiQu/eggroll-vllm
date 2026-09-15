@@ -1,0 +1,71 @@
+{
+  "model": "Qwen/Qwen3-1.7B",
+  "data": "GSM-LongHorizon/train_len_2.jsonl",
+  "n_prompts": 32,
+  "rank": 1,
+  "n_perturb": 8,
+  "base": {
+    "accuracy": 0.40625,
+    "format_rate": 0.0,
+    "mean_tokens": 340.46875,
+    "entropy": 0.06346632973070865,
+    "margin": 18.365500238128845,
+    "frac_margin_lt_0p5": 0.015052776667022306,
+    "top1_prob": 0.9747414836975454,
+    "n_tokens": 10895.0
+  },
+  "sigmas": {
+    "0.001": {
+      "p_text_changed": 0.99609375,
+      "p_correct_fixed": 0.080078125,
+      "p_correct_broke": 0.111328125,
+      "p_correct_changed": 0.19140625,
+      "p_format_changed": 0.08203125,
+      "first_div_frac_mean": 0.0841913070092419,
+      "pair_fitness_disagree": 0.2578125,
+      "pair_correct_disagree": 0.2578125,
+      "pair_format_disagree": 0.1640625,
+      "pair_identical_text": 0.0,
+      "seconds": 400.8602201938629
+    },
+    "0.003": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.029296875,
+      "p_correct_broke": 0.2890625,
+      "p_correct_changed": 0.318359375,
+      "p_format_changed": 0.392578125,
+      "first_div_frac_mean": 0.01282355361218086,
+      "pair_fitness_disagree": 0.18359375,
+      "pair_correct_disagree": 0.18359375,
+      "pair_format_disagree": 0.73828125,
+      "pair_identical_text": 0.0,
+      "seconds": 521.4133393764496
+    },
+    "0.01": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.0,
+      "p_correct_broke": 0.40234375,
+      "p_correct_changed": 0.40234375,
+      "p_format_changed": 0.0,
+      "first_div_frac_mean": 2.288818359375e-05,
+      "pair_fitness_disagree": 0.0078125,
+      "pair_correct_disagree": 0.0078125,
+      "pair_format_disagree": 0.0,
+      "pair_identical_text": 0.0,
+      "seconds": 615.1356687545776
+    },
+    "0.03": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.0,
+      "p_correct_broke": 0.40625,
+      "p_correct_changed": 0.40625,
+      "p_format_changed": 0.0,
+      "first_div_frac_mean": 0.0,
+      "pair_fitness_disagree": 0.0,
+      "pair_correct_disagree": 0.0,
+      "pair_format_disagree": 0.0,
+      "pair_identical_text": 0.0,
+      "seconds": 617.4963502883911
+    }
+  }
+}
