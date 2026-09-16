@@ -41,7 +41,7 @@ DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-
 [[ -d "$MERGED" ]] || { echo "merged dir not found: $MERGED" >&2; exit 1; }
 
 MODELS=("base:Qwen/Qwen3-1.7B")
-for d in $(ls -d "$MERGED"/step_* | sort -t_ -k2 -n); do
+for d in $(ls -d "$MERGED"/step_* | awk -F/ '{print $NF" "$0}' | sort -t_ -k2 -n | cut -d" " -f2); do
   MODELS+=("$(basename "$d"):$d")
 done
 echo "ARM=$ARM  models: ${#MODELS[@]}"
