@@ -111,6 +111,11 @@ every step as `diag/*`):
   of correctness signal ES has per step. If it is ~2% at pop 256, ES is
   estimating the correctness gradient from ~3 pairs per step.
 
+_Update 2026-09-16: the correctness-only run answered the first row's
+question without the resume — correctness rises when it is the only axis
+(Section 3.6). The resume run (job 6600958) now tests whether the gated
+objective gets there too._
+
 Decision table after the resume run:
 
 | `cos_with_fitness` (correctness) | `frac_correct` | Reading |
@@ -427,6 +432,79 @@ blocked from the sandbox; `ESHyperscale/nano-egg` was cloned read-only).
   rank-1 geometry and proposes a leave-one-out estimator (LOO-ROLL) that halves
   estimator MSE at equal cost; not read in full (blocked), flagged for later.
 
+## 3.6 Results of the correctness-only horizon-2 arms (2026-09-16)
+
+Full numbers and tables are in `EXPERIMENT_SUMMARY.md` ("Correctness-only
+horizon-2 with fp32 master"); this section records what they mean for the
+questions in Sections 1–3.
+
+**What actually ran.** The three arms of Section 4 item 2 were submitted from a
+cluster clone that did not yet have commit 5c74e99. Consequences: the
+`FP32_MASTER=0` arm ran with the master ON (job 6555687; per-step
+`frac_correct` correlates 0.998 with the intended fp32 arm, job 6555686, same
+seed — the trainer is close to deterministic), and all three arms shared one
+checkpoint directory, so only 6555687's checkpoints survive and the σ=3e-4
+checkpoints (job 6555703) were overwritten. The bf16 control was resubmitted
+with the fixed script on 2026-09-16 (job 6600957); the gated resume too (job
+6600958).
+
+**Result.** The fp32-master, correctness-only, σ=1e-3 arm is the first run in
+this project whose checkpoints beat base on held-out correctness, and by a
+wide margin: test_len_2 38.6% → 51.5% at step 599 (paired: 95 fixed, 33 broke),
+test_len_3 14.6% → 30.3% without being trained on horizon 3, test_len_1
+unchanged (~77%). Training `frac_correct` (population mean) rose 0.40 → 0.51
+over 600 steps; against the gated bf16 run on the *same prompts in the same
+order* it is +0.02 ahead over steps 0–99 and +0.08 ahead over steps 200–299,
+i.e. before any prompt is seen a second time. No format was learned (0% soft
+format; the objective never mentions it) and outputs got ~45% longer.
+
+**Diagnostics.** `diag/frac_correct/cos_with_fitness` is 1 by construction in
+this mode. `pairs_with_signal` stayed at 0.88–0.92 all run, identical pairs
+≤0.05%, top-k entropy 0.064 → 0.053 nats and greedy margin 18.2 → 19.0: mild
+sharpening, no collapse (Section 2 monitors all quiet). The σ=3e-4 arm (lr
+scaled to 6e-5) still had usable pair disagreement (0.80 pairs-with-signal,
+19% of pairs differing) but half of its population produced non-distinct text
+and training accuracy barely moved (0.42 → 0.44): at this scale a 3× smaller
+σ mostly buys perturbations too small to change the greedy output.
+
+**How to read `diag/update/*` with the fp32 master on.** `applied_frac` ~0.17
+and `realised/intended` ~3 look alarming next to Section 3.3's table, but
+they are the expected signature of the master working. The fp32 copy moves by
+the full intended step every iteration; the bf16 engine copy is a rounded
+snapshot of it, so per step only the entries whose master value crossed a
+bf16 rounding boundary change, and when they do they jump by one bf16 spacing,
+which is several times the per-step intended change. Nothing is lost across
+steps. In the bf16 arm the same numbers (0.09–0.10 applied, 0.54–0.58
+realised/intended, cos 0.41–0.44, measured in job 6600957's first steps and
+identical to the fp32 arm's step 0) mean the opposite: 90% of each step is
+rounded away with no memory of it.
+
+**What it does and does not settle.**
+
+* Section 1 (not enough iterations / format first): the professor's mechanism
+  does not need to be invoked to get correctness moving — with no format
+  term and 600 steps, correctness moved from step ~100 on. Whether the gated
+  run would also get there after format saturates is what job 6600958 tests;
+  its step-300 diagnostics already show `frac_correct/cos_with_fitness` 0.75
+  vs `frac_format_ok` 0.41, i.e. the gated update is now mostly a correctness
+  update.
+* Section 2 (entropy collapse): not present in any run so far, including the
+  one that learned.
+* Section 3.3 (bf16 rounding): **still open**. Relative to the gated run this
+  arm changed both the objective and the precision. The bf16 control (job
+  6600957, same seed, same objective, same data order) is the direct A/B:
+  compare its `reward/frac_correct` window means with the table in
+  `EXPERIMENT_SUMMARY.md` at matching steps, then run
+  `ARM=bf16_sigma0.001 sbatch submit_eval_len2_correctonly.sh`. If it matches
+  the fp32 arm, the objective was the whole story and 3.3 is a non-issue at
+  this scale; if it stays flat at ~0.40, the rounding was the bug and the
+  official code path loses it too.
+* Section 3.2 (own code): `es_reference.py train --task gsm` is still worth
+  running, now with a positive control to reproduce rather than a negative
+  result to explain.
+
+---
+
 ## 4. Suggested order
 
 1. ~~`sbatch submit_probe_sensitivity.sh`~~ **done** (Section 3.4): no
@@ -438,9 +516,15 @@ blocked from the sandbox; `ESHyperscale/nano-egg` was cloned read-only).
    `SIGMA=0.0003 LEARNING_RATE=0.00006` (smaller sigma, fp32 master).
    Watch `reward/frac_correct`, `diag/frac_correct/cos_with_fitness` (should be
    ~1 since correctness is the only axis), `diag/update/applied_frac`.
+   **Status 2026-09-16 (Section 3.6):** fp32 σ=1e-3 arm done and evaluated
+   (held-out +13 pts on len_2); σ=3e-4 arm done, flat, checkpoints lost;
+   bf16 arm mis-ran as fp32 and was **resubmitted as job 6600957** — when it
+   finishes: `ARM=bf16_sigma0.001 sbatch submit_eval_len2_correctonly.sh`.
 3. `sbatch submit_h1_stage2_len2_gated_resume.sh` (4 GPU) if budget allows:
    the literal "run longer" test. Prediction from the probe: format keeps
    absorbing the update (`diag/frac_format_ok/pairs_with_signal` stays high).
+   **Status 2026-09-16: running as job 6600958** (steps 300–899, checkpoints
+   every 50 into `runs/h1_curriculum_len2_gated`).
 4. `es_reference.py probe --save-examples 8` on 8 prompts (1 GPU, minutes) to
    read what the sigma = 3e-3 "formatted but wrong" outputs look like.
 5. `es_reference.py train --task gsm` small run vs. the pipeline at equal
