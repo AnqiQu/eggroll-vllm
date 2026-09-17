@@ -21,6 +21,9 @@
 # The base file is re-evaluated per arm (10 min) so every comparison is paired on
 # the same evaluator version; h1_gsm_eval.py's falsy-zero fix is already in.
 ARM="${ARM:-fp32master_sigma0.001}"
+# Optional overrides to evaluate a different run with the same machinery, e.g. the gated resume:
+#   MERGED=runs/h1_curriculum_len2_gated/stage2_len2/merged ARM=gated sbatch submit_eval_len2_correctonly.sh
+MERGED_OVERRIDE="${MERGED:-}"
 
 set -euo pipefail
 mkdir -p logs results
@@ -36,7 +39,7 @@ export TORCHINDUCTOR_CACHE_DIR="$SCRATCH/.inductor_len2conlyeval_${SLURM_JOB_ID}
 mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
 
 cd "$SCRATCH/eggroll-vllm"
-MERGED="runs/h1_curriculum_len2_correctonly_${ARM}/stage2_len2/merged"
+MERGED="${MERGED_OVERRIDE:-runs/h1_curriculum_len2_correctonly_${ARM}/stage2_len2/merged}"
 DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl"
 [[ -d "$MERGED" ]] || { echo "merged dir not found: $MERGED" >&2; exit 1; }
 
