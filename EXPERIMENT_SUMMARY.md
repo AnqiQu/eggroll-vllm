@@ -1,6 +1,6 @@
 # EGGROLL × h1 GSM-LongHorizon — Experiment Summary & Open Problem
 
-_Last updated: 2026-09-16_
+_Last updated: 2026-09-17_
 
 ## Goal
 Replicate h1's **GSM-LongHorizon** long-horizon math-reasoning experiment, but
@@ -39,11 +39,11 @@ see whether ES can improve multi-hop reasoning accuracy.
 | 7 | Perturbation-sensitivity probe (`es_reference.py probe`, job 6543946) | base vs gated step_299, σ ∈ {1e-3, 3e-3, 1e-2, 3e-2} | No entropy collapse; 26% of pairs disagree on correctness at σ=1e-3; σ=1e-3 already lowers accuracy on average. See "Perturbation-sensitivity probe". |
 | 8 | **Correctness-only, horizon-2, fp32 master** (jobs 6555686/6555687, identical replicates; eval job 6600956) | pop-256, σ=1e-3, lr=2e-4, 600 steps from base, `--fp32-master` | **First run that beats base on held-out correctness: test_len_2 38.6% → 51.5% at step 599 (paired net +62/482), test_len_3 14.6% → 30.3%, test_len_1 flat.** Training `frac_correct` 0.40 → 0.51. See "Correctness-only horizon-2 with fp32 master". |
 | 8b | Same, σ=3e-4 / lr=6e-5 (job 6555703) | as 8 with smaller σ | Training `frac_correct` flat (0.42 → 0.44). Checkpoints lost (all three arms wrote to one dir; stale clone, see below). |
-| 9 | **bf16 control** for #8 (job 6600957, submitted 2026-09-16) | as 8 with `FP32_MASTER=0` | **Running.** Decides whether #8's gain is the fp32 master or the correctness-only objective. |
-| 10 | Gated run continued 300 → 900 steps (job 6600958, submitted 2026-09-16) | resume from gated step_299, bf16 | **Running.** The literal "run longer" test. |
+| 9 | **bf16 control** for #8 (job 6600957; eval 6623088) | as 8 with `FP32_MASTER=0` | **Also learns, but less: test_len_2 38.6% → 47.3% (net +42), test_len_3 → 25.5%.** Training `frac_correct` trails #8 by ~4 pts from step 300 on. Objective is the main driver; fp32 master adds ~4 pts. See "bf16 vs fp32 A/B". |
+| 10 | Gated run continued 300 → 900 steps (job 6600958; eval 6623089, all steps 50–899) | resume from gated step_299, bf16 | **Small, late correctness gain once format saturates:** test_len_2 best 43.8% at step 800 (net +25), 40.0% at 899; soft-format 98%. Slower than #8/#9 at a larger step budget. See "Gated run to step 899". |
 
 ## The core problem
-_Status 2026-09-16: this section describes the bf16 full-reward and gated runs (#1, #5). Run #8 below (correctness-only objective + fp32 master) breaks the pattern; whether the objective or the precision fix is responsible is what run #9 decides._
+_Status 2026-09-17: this section describes the bf16 full-reward and gated runs (#1, #5). Runs #8/#9 below (correctness-only objective, with and without the fp32 master) break the pattern, and #10 shows the gated objective eventually moves correctness too, slowly._
 
 **Under EGGROLL, the reward goes up but correctness does not.** Every gain comes
 from the model learning to *format* its output, not to *reason* more correctly.
@@ -251,14 +251,84 @@ it barely moved.
   (1024-token budget in training, 2048 at eval).
 - best len_2 checkpoint by accuracy: step_450 (52.9%); by len_2+len_3: step_500.
 
-**Open confound.** Relative to the gated run, #8 changes two things at once:
-the objective (correctness only) and the update precision (fp32 master). The
-earlier correctness-only run (#4) was bf16 but on near-ceiling horizon-1, so
-it does not settle it. Run #9 (bf16, otherwise identical, same seed — its
-first steps reproduce #8's population fitness to ±0.01) is the A/B; its
-training `frac_correct` at matching steps against #8 (and then the same
-held-out eval via `ARM=bf16_sigma0.001 sbatch submit_eval_len2_correctonly.sh`)
-answers it directly.
+**Open confound (resolved 2026-09-17, next two sections).** Relative to the
+gated run, #8 changed both the objective (correctness only) and the update
+precision (fp32 master). Run #9 separated them.
+
+## bf16 vs fp32 A/B (2026-09-17): objective is the main driver, precision adds ~4 pts
+Run #9 = #8 with `FP32_MASTER=0`, same seed and data order (its first 30
+steps reproduce #8's population fitness to 4 decimals). Files:
+`results/len2_conly_bf16_sigma0.001_*.json`, curves in
+`results/train_curves_len2.json`.
+
+Training `frac_correct`, 100-step windows, and the bf16 − fp32 difference on
+the same prompts:
+
+| steps | 0–99 | 100–199 | 200–299 | 300–399 | 400–499 | 500–599 |
+|---|---|---|---|---|---|---|
+| fp32 master (#8) | 0.399 | 0.426 | 0.460 | 0.481 | 0.491 | 0.512 |
+| bf16 (#9) | 0.393 | 0.409 | 0.433 | 0.444 | 0.452 | 0.474 |
+| bf16 − fp32 | −0.005 | −0.018 | −0.026 | −0.037 | −0.038 | −0.038 |
+
+Held-out, paired with base (38.6% on len_2, 14.6% on len_3):
+
+| checkpoint | len_2 fp32 | len_2 bf16 | len_2 net fp32 / bf16 | len_3 fp32 | len_3 bf16 |
+|---|---|---|---|---|---|
+| step_200 | 45.6 | 43.6 | +34 / +24 | 24.1 | 24.1 |
+| step_400 | 49.0 | 44.0 | +50 / +26 | 28.2 | 26.2 |
+| step_500 | 50.8 | 46.7 | +59 / +39 | 31.6 | 27.2 |
+| step_599 | 51.5 | 47.3 | +62 / +42 | 30.3 | 25.5 |
+
+- Both arms learn; the bf16 arm gets roughly two thirds of the fp32 arm's
+  held-out gain. So the earlier "correctness never moves" result was mostly
+  the objective (format term present), not the precision.
+- The fp32 master is worth ~4 pts on len_2 and ~5 on len_3 at 600 steps, and
+  the gap opens after step ~100 and then stays constant rather than growing,
+  i.e. it behaves like a modest effective-learning-rate difference, which is
+  what rounding away ~90% of each bf16 step (`applied_frac` 0.096 vs 0.166,
+  realised/intended 0.56 vs ~3) would predict. Single seed; a 4-pt gap on 482
+  questions is ~2 standard errors, but it is consistent across steps, splits
+  and the training curves.
+- Diagnostics are otherwise the same in both arms: pairs-with-signal ~0.9,
+  identical pairs <0.1%, entropy 0.064 → 0.059 (bf16) / 0.053 (fp32), margin
+  18.1 → 18.6 / 19.0. Outputs lengthen in both (len_2 chars 1088 → 1372 bf16,
+  → 1581 fp32).
+
+## Gated run to step 899 (2026-09-17): format saturates, then correctness creeps
+Run #10 = the horizon-2 gated run (#5) resumed from step_299 for 600 more
+steps, bf16, 2048-token budget. All 12 merged checkpoints 50–899 re-evaluated
+with a fresh base (`results/len2_conly_gated_*.json`).
+
+Training, 100-step windows from step 300: `frac_correct` 0.375 → 0.419,
+`frac_format_ok` 0.85 → 0.95, correctness share of the update direction
+(`diag/frac_correct/cos_with_fitness`) 0.76 → 0.90 while the format share
+fell 0.47 → 0.34 and format pairs-with-signal 0.83 → 0.40. Entropy and margin
+flat (0.067 nats, 18.1); no collapse.
+
+| checkpoint | len_2 acc | len_2 net | soft-format | len_3 acc | len_2 chars |
+|---|---|---|---|---|---|
+| base | 38.6 | – | 0.2% | 14.6 | 1088 |
+| step_299 | 39.2 | +3 | 82% | 17.3 | 958 |
+| step_500 | 41.1 | +12 | 95% | 16.3 | 988 |
+| step_700 | 43.4 | +23 | 98% | 18.7 | 971 |
+| step_800 | 43.8 | +25 | 98% | 18.4 | 984 |
+| step_899 | 40.0 | +7 | 98% | 20.4 | 1038 |
+
+- The supervisor's mechanism is real but weak: once format saturates (~step
+  400) the update is mostly a correctness update and held-out correctness
+  moves up by ~5 pts over the next 400 steps, then drops back at 899.
+- At the same or smaller step budget the correctness-only runs reach 47–52%,
+  and their outputs get longer where the gated run's stay short (~980 chars,
+  hop-dropping). Format in the objective is a cost, not just a delay.
+
+**Where this leaves the project.** ES can improve multi-hop correctness on
+this task when the objective is correctness alone: +13 pts on the trained
+horizon and +16 on the untrained horizon 3, with no collapse. Next levers, in
+order: (1) run the fp32 correctness-only arm longer and/or from its step_450
+checkpoint (`RESUME_FROM`), watching truncation at the 1024-token budget
+(1.3% and rising); (2) a second seed of #8/#9 to firm up the fp32 effect; (3)
+h1's curriculum proper (stage 3 from the best step_2 checkpoint); (4) the
+reference trainer on the same task as the "own code" check.
 
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`

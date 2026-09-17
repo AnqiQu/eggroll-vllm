@@ -490,15 +490,20 @@ rounded away with no memory of it.
   update.
 * Section 2 (entropy collapse): not present in any run so far, including the
   one that learned.
-* Section 3.3 (bf16 rounding): **still open**. Relative to the gated run this
-  arm changed both the objective and the precision. The bf16 control (job
-  6600957, same seed, same objective, same data order) is the direct A/B:
-  compare its `reward/frac_correct` window means with the table in
-  `EXPERIMENT_SUMMARY.md` at matching steps, then run
-  `ARM=bf16_sigma0.001 sbatch submit_eval_len2_correctonly.sh`. If it matches
-  the fp32 arm, the objective was the whole story and 3.3 is a non-issue at
-  this scale; if it stays flat at ~0.40, the rounding was the bug and the
-  official code path loses it too.
+* Section 3.3 (bf16 rounding): **resolved 2026-09-17** by the bf16 control
+  (job 6600957, same seed/objective/data). It learns too — held-out len_2
+  38.6% → 47.3% vs 51.5% for fp32, len_3 → 25.5% vs 30.3% — with training
+  `frac_correct` trailing by a constant ~0.04 from step 300 on. So the
+  rounding was not the reason correctness stayed flat before (the objective
+  was), but it does cost about a third of the gain at this step budget, in
+  the way an effective-learning-rate cut would. The fp32 master (or a
+  stochastic-rounding / thresholded one-ulp variant, Section 3.5) is worth
+  keeping. One seed each; see the A/B table in `EXPERIMENT_SUMMARY.md`.
+* Section 1 follow-up (gated resume, job 6600958, steps 300–899): format
+  saturates at ~95–98%, `frac_correct/cos_with_fitness` rises to 0.90, and
+  held-out len_2 goes 39.2% (step 299) → 43.8% (step 800) → 40.0% (899). The
+  professor's sequence happens, but the correctness phase is slow and
+  noisy compared with dropping the format term (47–52% at ≤600 steps).
 * Section 3.2 (own code): `es_reference.py train --task gsm` is still worth
   running, now with a positive control to reproduce rather than a negative
   result to explain.
@@ -518,13 +523,13 @@ rounded away with no memory of it.
    ~1 since correctness is the only axis), `diag/update/applied_frac`.
    **Status 2026-09-16 (Section 3.6):** fp32 σ=1e-3 arm done and evaluated
    (held-out +13 pts on len_2); σ=3e-4 arm done, flat, checkpoints lost;
-   bf16 arm mis-ran as fp32 and was **resubmitted as job 6600957** — when it
-   finishes: `ARM=bf16_sigma0.001 sbatch submit_eval_len2_correctonly.sh`.
+   bf16 arm mis-ran as fp32 and was resubmitted as job 6600957 — **done and
+   evaluated 2026-09-17 (len_2 47.3% vs fp32 51.5%; Section 3.6).**
 3. `sbatch submit_h1_stage2_len2_gated_resume.sh` (4 GPU) if budget allows:
    the literal "run longer" test. Prediction from the probe: format keeps
    absorbing the update (`diag/frac_format_ok/pairs_with_signal` stays high).
-   **Status 2026-09-16: running as job 6600958** (steps 300–899, checkpoints
-   every 50 into `runs/h1_curriculum_len2_gated`).
+   **Done as job 6600958, evaluated 2026-09-17:** len_2 best 43.8% at step
+   800, 40.0% at 899, format 98% (Section 3.6).
 4. `es_reference.py probe --save-examples 8` on 8 prompts (1 GPU, minutes) to
    read what the sigma = 3e-3 "formatted but wrong" outputs look like.
 5. `es_reference.py train --task gsm` small run vs. the pipeline at equal
