@@ -24,6 +24,10 @@ ARM="${ARM:-fp32master_sigma0.001}"
 # Optional overrides to evaluate a different run with the same machinery, e.g. the gated resume:
 #   MERGED=runs/h1_curriculum_len2_gated/stage2_len2/merged ARM=gated sbatch submit_eval_len2_correctonly.sh
 MERGED_OVERRIDE="${MERGED:-}"
+# PREFIX names the result files (results/<PREFIX>_<ARM>_<label>.json); DATASETS overrides the
+# test splits (e.g. add test_len_4 for a stage-3 run); STEPS="500 599" restricts to those checkpoints.
+PREFIX="${PREFIX:-len2_conly}"
+STEPS="${STEPS:-}"
 
 set -euo pipefail
 mkdir -p logs results
@@ -40,19 +44,21 @@ mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
 
 cd "$SCRATCH/eggroll-vllm"
 MERGED="${MERGED_OVERRIDE:-runs/h1_curriculum_len2_correctonly_${ARM}/stage2_len2/merged}"
-DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl"
+DATASETS="${DATASETS:-GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl}"
 [[ -d "$MERGED" ]] || { echo "merged dir not found: $MERGED" >&2; exit 1; }
 
 MODELS=("base:Qwen/Qwen3-1.7B")
 for d in $(ls -d "$MERGED"/step_* | awk -F/ '{print $NF" "$0}' | sort -t_ -k2 -n | cut -d" " -f2); do
-  MODELS+=("$(basename "$d"):$d")
+  lbl="$(basename "$d")"
+  if [[ -n "$STEPS" ]] && ! grep -qw "${lbl#step_}" <<<"$STEPS"; then continue; fi
+  MODELS+=("$lbl:$d")
 done
-echo "ARM=$ARM  models: ${#MODELS[@]}"
+echo "PREFIX=$PREFIX ARM=$ARM  models: ${#MODELS[@]}  datasets: $DATASETS"
 
 for entry in "${MODELS[@]}"; do
   label="${entry%%:*}"
   model="${entry#*:}"
-  out="results/len2_conly_${ARM}_${label}.json"
+  out="results/${PREFIX}_${ARM}_${label}.json"
   if [[ -s "$out" ]]; then echo "========== SKIP ${label} (exists: $out) =========="; continue; fi
   echo "========== EVAL ${label} (${model}) =========="
   python h1_gsm_eval.py \
@@ -65,10 +71,10 @@ done
 
 echo
 echo "================= COMPARISON TABLE (accuracy %) ================="
-python - "$ARM" <<'PYEOF' || echo "(aggregation failed; per-model JSONs are still saved in results/)"
+python - "${PREFIX}_${ARM}" <<'PYEOF' || echo "(aggregation failed; per-model JSONs are still saved in results/)"
 import json, glob, os, re, sys
 arm = sys.argv[1]
-prefix = f"results/len2_conly_{arm}_"
+prefix = f"results/{arm}_"
 rows = {}
 for path in glob.glob(prefix + "*.json"):
     label = os.path.basename(path)[len(os.path.basename(prefix)):-len(".json")]
@@ -79,7 +85,7 @@ for path in glob.glob(prefix + "*.json"):
                        for d, v in dsets.items()}
 def key(l):
     m = re.search(r"step_(\d+)", l); return -1 if not m else int(m.group(1))
-cols = ["len_1", "len_2", "len_3"]
+cols = ["len_1", "len_2", "len_3", "len_4"]
 print(f"{'model':10s} " + " ".join(f"{c:>8s}" for c in cols))
 for label in sorted(rows, key=key):
     print(f"{label:10s} " + " ".join(f"{rows[label].get(c, float('nan')):8.2f}" for c in cols))
@@ -87,5 +93,5 @@ print("\n(base is Qwen3-1.7B; len_2 is the trained horizon. Look for step_* > ba
 PYEOF
 echo
 echo "================= PAIRED ANALYSIS (len_2) ================="
-python analyze_heldout.py --splits len_2 "results/len2_conly_${ARM}_base.json" results/len2_conly_${ARM}_step_*.json || true
+python analyze_heldout.py "results/${PREFIX}_${ARM}_base.json" results/${PREFIX}_${ARM}_step_*.json || true
 echo "ALL EVALS DONE"
