@@ -5,11 +5,12 @@
 #SBATCH --gpus=4
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
-#SBATCH --time=14:00:00
+#SBATCH --time=20:00:00
 
 # Curriculum STAGE 3 (horizon 3) with the recipe that worked on horizon 2:
 # correctness-only fitness, fp32 master, sigma 1e-3, lr 2e-4, pop 256, batch 8,
-# 600 steps. Base model = the horizon-2 checkpoint with the best overall
+# 600 steps (~95 min per 50 steps at 1280 tokens: job 6634348 timed out at step 530
+# under 14 h, hence 20 h). Base model = the horizon-2 checkpoint with the best overall
 # horizon-1..3 accuracy (h1's selection rule): step_500 of the fp32 arm
 # (len_1/2/3 = 76.8 / 50.8 / 31.6, see results/len2_conly_fp32master_sigma0.001_*).
 # Stage default completion length is 1280 (h1's recommendation for horizon 3).
