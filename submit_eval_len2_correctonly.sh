@@ -28,6 +28,8 @@ MERGED_OVERRIDE="${MERGED:-}"
 # test splits (e.g. add test_len_4 for a stage-3 run); STEPS="500 599" restricts to those checkpoints.
 PREFIX="${PREFIX:-len2_conly}"
 STEPS="${STEPS:-}"
+# BASE_LABEL_MODEL: the untrained reference evaluated as "base" (default Qwen3-1.7B).
+BASE_LABEL_MODEL="${BASE_LABEL_MODEL:-Qwen/Qwen3-1.7B}"
 
 set -euo pipefail
 mkdir -p logs results
@@ -47,7 +49,7 @@ MERGED="${MERGED_OVERRIDE:-runs/h1_curriculum_len2_correctonly_${ARM}/stage2_len
 DATASETS="${DATASETS:-GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl}"
 [[ -d "$MERGED" ]] || { echo "merged dir not found: $MERGED" >&2; exit 1; }
 
-MODELS=("base:Qwen/Qwen3-1.7B")
+MODELS=("base:${BASE_LABEL_MODEL}")
 for d in $(ls -d "$MERGED"/step_* | awk -F/ '{print $NF" "$0}' | sort -t_ -k2 -n | cut -d" " -f2); do
   lbl="$(basename "$d")"
   if [[ -n "$STEPS" ]] && ! grep -qw "${lbl#step_}" <<<"$STEPS"; then continue; fi

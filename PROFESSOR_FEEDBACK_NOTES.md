@@ -510,6 +510,17 @@ rounded away with no memory of it.
 
 ---
 
+
+**Stage 3 (2026-09-18).** The same recipe applied to horizon 3 from the
+stage-2 step_500 model gives 76.9 / 56.0 / 36.1 / 18.5 on horizons 1–4 at
+step 500 (base 76.8 / 38.6 / 14.6 / 5.4), i.e. h1's Len-3 GRPO numbers on a
+model half the size (their 84.9 / 56.2 / 37.8 / 15.6 on Qwen2.5-3B). No
+collapse signs; truncation at 1280 tokens is the one metric trending up
+(2.3% → 4.3%). Full tables in `EXPERIMENT_SUMMARY.md`. The professor's two
+concerns are therefore answered in the positive direction: the algorithm
+learns reasoning on this task once format is out of the objective, and it
+does so without entropy collapse.
+
 ## 4. Suggested order
 
 1. ~~`sbatch submit_probe_sensitivity.sh`~~ **done** (Section 3.4): no
@@ -536,6 +547,9 @@ rounded away with no memory of it.
    settings (1 GPU). The "own code" comparison proper.
 
 Then update the decision tables in Sections 1.3 and 2.2.
+6. **(2026-09-18) Same-base replication:** `STAGE=1 sbatch submit_h1_qwen25_3b_stage_correctonly.sh`,
+   then stages 2 and 3 from the best merged step each time, evaluated with
+   `BASE_LABEL_MODEL=Qwen/Qwen2.5-3B-Instruct`. Compares directly with h1's table.
 
 ---
 

@@ -1,6 +1,6 @@
 # EGGROLL × h1 GSM-LongHorizon — Experiment Summary & Open Problem
 
-_Last updated: 2026-09-17_
+_Last updated: 2026-09-18_
 
 ## Goal
 Replicate h1's **GSM-LongHorizon** long-horizon math-reasoning experiment, but
@@ -41,6 +41,8 @@ see whether ES can improve multi-hop reasoning accuracy.
 | 8b | Same, σ=3e-4 / lr=6e-5 (job 6555703) | as 8 with smaller σ | Training `frac_correct` flat (0.42 → 0.44). Checkpoints lost (all three arms wrote to one dir; stale clone, see below). |
 | 9 | **bf16 control** for #8 (job 6600957; eval 6623088) | as 8 with `FP32_MASTER=0` | **Also learns, but less: test_len_2 38.6% → 47.3% (net +42), test_len_3 → 25.5%.** Training `frac_correct` trails #8 by ~4 pts from step 300 on. Objective is the main driver; fp32 master adds ~4 pts. See "bf16 vs fp32 A/B". |
 | 10 | Gated run continued 300 → 900 steps (job 6600958; eval 6623089, all steps 50–899) | resume from gated step_299, bf16 | **Small, late correctness gain once format saturates:** test_len_2 best 43.8% at step 800 (net +25), 40.0% at 899; soft-format 98%. Slower than #8/#9 at a larger step budget. See "Gated run to step 899". |
+| 11 | **Stage 3 (horizon 3)** from stage-2 step_500, same recipe (job 6634348; walltime at step 530, checkpoints 50–500 merged by `submit_merge_eval_len3.sh`, eval job 6660573; steps 550/599 via resume job 6661363) | correctness-only, fp32 master, 1280-token budget | **step_500: 76.9 / 56.0 / 36.1 / 18.5 on len 1/2/3/4** (base 76.8 / 38.6 / 14.6 / 5.4). Matches h1's Qwen2.5-3B GRPO Len-3 row on len_2 and len_4 with a 1.7B model. See "Stage 3". |
+| 12 | Same-base replication on **Qwen2.5-3B-Instruct**, stage 1 (job submitted 2026-09-18, `submit_h1_qwen25_3b_stage_correctonly.sh`) | same recipe | **Running.** |
 
 ## The core problem
 _Status 2026-09-17: this section describes the bf16 full-reward and gated runs (#1, #5). Runs #8/#9 below (correctness-only objective, with and without the fp32 master) break the pattern, and #10 shows the gated objective eventually moves correctness too, slowly._
@@ -329,6 +331,59 @@ checkpoint (`RESUME_FROM`), watching truncation at the 1024-token budget
 (1.3% and rising); (2) a second seed of #8/#9 to firm up the fp32 effect; (3)
 h1's curriculum proper (stage 3 from the best step_2 checkpoint); (4) the
 reference trainer on the same task as the "own code" check.
+
+## Stage 3 (2026-09-18): horizon 3 on top of the horizon-2 model, and the h1 comparison
+Run #11 = `submit_h1_stage3_len3_correctonly.sh`: same recipe as #8, base model
+= stage-2 step_500 (best combined len_1..3 accuracy, h1's selection rule),
+train_len_3, 1280-token budget. The 14 h walltime ended it at step 530 (about
+95 min per 50 steps at this length); checkpoints 50–500 were merged and
+evaluated afterwards, and a resume job is finishing steps 500–599. Files:
+`results/len3_conly_fp32master_sigma0.001_*.json`, curves in
+`results/train_curves_len3.json`.
+
+Training: population `frac_correct` on horizon 3 0.25 → 0.31 (100-step window
+means 0.246, 0.278, 0.288, 0.298, 0.314, 0.295); pairs-with-signal 0.87,
+identical pairs 0, entropy 0.049 and margin 19.4 flat; truncation at 1280
+tokens 2.3% → 4.3% (rising, worth watching at stage 4).
+
+Held-out (paired with base):
+
+| checkpoint | len_1 | len_2 | len_3 (net) | len_4 (net) | len_3 chars |
+|---|---|---|---|---|---|
+| base | 76.8 | 38.6 | 14.6 | 5.4 | 1549 |
+| stage-2 step_500 (start) | 76.8 | 50.8 | 31.6 | 12.1 | 2165 |
+| stage-3 step_50 | 76.9 | 53.1 | 29.9 (+45) | 11.8 (+24) | 2176 |
+| stage-3 step_200 | 76.4 | 53.5 | 36.1 (+63) | 11.3 (+22) | 2332 |
+| stage-3 step_350 | 78.0 | 55.2 | 35.4 (+61) | 15.3 (+37) | 2425 |
+| stage-3 step_500 | 76.9 | 56.0 | 36.1 (+63) | 18.5 (+49) | 2515 |
+
+- Training on horizon 3 kept improving horizon 2 (50.8 → 56.0) and more than
+  tripled horizon 4 relative to base without ever training on it. Horizon 1
+  is untouched throughout the curriculum.
+- "Broke" on len_3 is 8–13 questions at every checkpoint; the gains are
+  almost entirely new solves.
+- Outputs keep getting longer (len_3 chars 1549 → 2515); the model reasons
+  more per hop rather than dropping hops.
+
+Against h1's GRPO table (their model is Qwen2.5-3B-Instruct, ours Qwen3-1.7B,
+so absolute L-1 differs; greedy decoding, same test files):
+
+| | L-1 | L-2 | L-3 | L-4 |
+|---|---|---|---|---|
+| h1 Instruct (Qwen2.5-3B) | 82.8 | 35.1 | 20.1 | 6.7 |
+| h1 Len-2 (GRPO stages 1–2) | 85.9 | 56.2 | 28.6 | 12.1 |
+| h1 Len-3 (GRPO stages 1–3) | 84.9 | 56.2 | 37.8 | 15.6 |
+| ours base (Qwen3-1.7B) | 76.8 | 38.6 | 14.6 | 5.4 |
+| ours after stage 2 (ES, step_500) | 76.8 | 50.8 | 31.6 | 12.1 |
+| ours after stage 3 (ES, step_500) | 76.9 | 56.0 | 36.1 | 18.5 |
+
+After two ES stages on a model half the size, L-2 equals h1's L-2, L-3 is
+within 2 points, and L-4 is ahead. The cost side is very different: ES scores
+2048 rollouts per step (forward only) for 600 steps per stage, GRPO with h1's
+defaults uses ~16 completions per prompt and a few prompts per step for 300
+steps with backward passes. The same-base-model replication (run #12,
+Qwen2.5-3B-Instruct, stages 1 → 2 → 3 with this recipe) removes the model
+confound; it is the next thing running.
 
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
