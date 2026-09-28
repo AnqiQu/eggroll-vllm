@@ -5,7 +5,7 @@
 #SBATCH --gpus=4
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
-#SBATCH --time=72:00:00
+#SBATCH --time=24:00:00
 
 # Same-base-model comparison with h1: their table is Qwen2.5-3B-Instruct trained
 # with DrGRPO through curriculum stages 1..N. This job runs ONE stage end to end
@@ -29,7 +29,10 @@
 #      RESUME_FROM (default: newest checkpoint of this stage, FRESH=1 to ignore);
 #      MAX_ATTEMPTS (3); SIGMA, LEARNING_RATE, FP32_MASTER (1).
 # Stage 1 on 3B: ~45 min per 50 steps at 768 tokens; later stages are longer
-# (more tokens per completion), hence the 72 h walltime (workq has no limit).
+# (more tokens per completion) and the workq QOS caps a job at 24 h. The job is
+# therefore idempotent: rerunning it resumes training from the newest checkpoint,
+# skips merges/evals that already exist and recomputes BEST, so a stage can be
+# spread over several 24 h jobs (submit_h1_qwen25_3b_chain.sh does this).
 POP=256
 STAGE="${STAGE:?Set STAGE=1..5}"
 FP32_MASTER="${FP32_MASTER-1}"

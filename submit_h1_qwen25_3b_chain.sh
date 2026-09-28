@@ -7,19 +7,29 @@
 #   START_STAGE=2 END_STAGE=4 ./submit_h1_qwen25_3b_chain.sh
 #   AFTER=<jobid> START_STAGE=2 ./submit_h1_qwen25_3b_chain.sh   # hang off an existing job
 #
-# Each stage auto-resumes from its newest checkpoint (see the stage script), so
-# stage 1 continues job 6661559's run from checkpoint_step_500 instead of
-# restarting. If a stage still fails, the rest of the chain shows
-# DependencyNeverSatisfied in squeue: cancel those and re-run this script with
-# START_STAGE=<failed stage>.
+# The workq QOS caps a job at 24 h, and stages 3-4 on the 3B model can take
+# longer, so each stage gets JOBS_PER_STAGE[stage] chained 24 h jobs
+# (--dependency=afterany): the stage script is idempotent and resumes from the
+# newest checkpoint, so a continuation job either finishes the stage or, if the
+# previous job already completed it, just re-prints the eval table and exits.
+# The next stage waits (afterok) on the LAST job of the previous stage. If a
+# stage fails for real, the later jobs show DependencyNeverSatisfied in squeue:
+# scancel them and re-run with START_STAGE=<failed stage>.
 set -euo pipefail
 START_STAGE="${START_STAGE:-1}"
 END_STAGE="${END_STAGE:-4}"
+# jobs per stage (index = stage). Stage 1 only has ~100 steps left; 2/3/4 grow with tokens.
+declare -a JOBS_PER_STAGE=( "" 1 2 2 3 3 )
 dep="${AFTER:-}"
 for stage in $(seq "$START_STAGE" "$END_STAGE"); do
-  args=(--job-name="eggroll-h1-q25-3b-s${stage}")
-  [[ -n "$dep" ]] && args+=(--dependency="afterok:${dep}")
-  jid="$(STAGE="$stage" sbatch --parsable "${args[@]}" submit_h1_qwen25_3b_stage_correctonly.sh)"
-  echo "stage $stage -> job $jid ${dep:+(after $dep)}"
-  dep="$jid"
+  n="${JOBS_PER_STAGE[$stage]}"
+  for k in $(seq 1 "$n"); do
+    args=(--job-name="eggroll-h1-q25-3b-s${stage}" --parsable)
+    if [[ -n "$dep" ]]; then
+      if [[ "$k" -eq 1 ]]; then args+=(--dependency="afterok:${dep}"); else args+=(--dependency="afterany:${dep}"); fi
+    fi
+    jid="$(STAGE="$stage" sbatch "${args[@]}" submit_h1_qwen25_3b_stage_correctonly.sh)"
+    echo "stage $stage job $k/$n -> $jid ${dep:+(after $dep)}"
+    dep="$jid"
+  done
 done
