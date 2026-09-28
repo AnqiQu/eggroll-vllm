@@ -376,6 +376,8 @@ so absolute L-1 differs; greedy decoding, same test files):
 | ours base (Qwen3-1.7B) | 76.8 | 38.6 | 14.6 | 5.4 |
 | ours after stage 2 (ES, step_500) | 76.8 | 50.8 | 31.6 | 12.1 |
 | ours after stage 3 (ES, step_500) | 76.9 | 56.0 | 36.1 | 18.5 |
+| ours after stage 3 (ES, step_550, best by h1's rule) | 77.0 | 55.6 | 39.1 | 18.5 |
+| ours after stage 3 (ES, step_599) | 76.6 | 56.4 | 35.7 | 17.2 |
 
 After two ES stages on a model half the size, L-2 equals h1's L-2, L-3 is
 within 2 points, and L-4 is ahead. The cost side is very different: ES scores
@@ -384,6 +386,28 @@ defaults uses ~16 completions per prompt and a few prompts per step for 300
 steps with backward passes. The same-base-model replication (run #12,
 Qwen2.5-3B-Instruct, stages 1 → 2 → 3 with this recipe) removes the model
 confound; it is the next thing running.
+
+### Same-base replication on Qwen2.5-3B-Instruct (run #12, 2026-09-18 → )
+
+Stage 1 (job 6661559, horizon-1 prompts, 768 tokens, otherwise the stage-2/3
+recipe) ran 541 of 600 steps in 6 h 41 min and then died: a vLLM worker
+segfaulted at step 542 and Ray aborted the job. No error in our code and no
+OOM message, so it is treated as a transient node fault. Checkpoints 50–500
+were saved; nothing was merged or evaluated. Training correctness on the
+horizon-1 prompts (100-step means): 0.869, 0.901, 0.913, 0.907, 0.917, 0.928.
+
+2026-09-28: the whole curriculum is now queued as a Slurm dependency chain
+(`submit_h1_qwen25_3b_chain.sh` → `submit_h1_qwen25_3b_stage_correctonly.sh`
+for stages 1–4). Each stage job auto-resumes from its newest checkpoint (stage 1
+continues from checkpoint_step_500, so the crash costs ~40 steps), retries up
+to 3 times on a crash, merges every checkpoint, evaluates base + all steps on
+horizons 1–4 into `results/q25_3b_len<S>_fp32master_sigma0.001_*.json`, and
+writes the h1-rule best step (highest combined L-1..L-3) to
+`runs/h1_qwen25_3b_correctonly_fp32master_sigma0.001/stage<S>_len<S>/BEST`,
+which the next stage uses as its base model. Resume note: the checkpoint
+stores bf16 weights, so the fp32 master restarts from those on resume; the
+sub-ulp residual of the step before the crash is lost once, same as the
+stage-3 resume that produced the step_550 result above.
 
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`

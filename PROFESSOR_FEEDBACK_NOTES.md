@@ -550,6 +550,11 @@ Then update the decision tables in Sections 1.3 and 2.2.
 6. **(2026-09-18) Same-base replication:** `STAGE=1 sbatch submit_h1_qwen25_3b_stage_correctonly.sh`,
    then stages 2 and 3 from the best merged step each time, evaluated with
    `BASE_LABEL_MODEL=Qwen/Qwen2.5-3B-Instruct`. Compares directly with h1's table.
+   *Status 2026-09-28:* stage 1 (job 6661559) crashed at step 542 (vLLM worker
+   segfault, checkpoints to 500 saved). Stages 1–4 are now queued as a
+   dependency chain via `submit_h1_qwen25_3b_chain.sh`: each stage auto-resumes,
+   merges, evaluates horizons 1–4 and writes its best step to `<stage dir>/BEST`
+   for the next stage. Results land in `results/q25_3b_len<S>_*.json`.
 
 ---
 
