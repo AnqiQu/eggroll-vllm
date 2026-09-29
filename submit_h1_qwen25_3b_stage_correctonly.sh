@@ -92,31 +92,31 @@ fi
 # ---- Ray cluster over all allocated nodes (pattern from slurm_launch_base_n16.sh) ----
 NODES_ARR=($(scontrol show hostnames "$SLURM_JOB_NODELIST"))
 HEAD_NODE="${NODES_ARR[0]}"
-GPUS_PER_NODE="${SLURM_GPUS_PER_NODE:-4}"
+GPUS_PER_NODE="${SLURM_GPUS_PER_NODE:-4}"; GPUS_PER_NODE="${GPUS_PER_NODE##*:}"   # "gh200:4" -> 4
 EXPECTED_GPUS=$(( GPUS_PER_NODE * SLURM_JOB_NUM_NODES ))
 
 shm_cleanup() {
-  srun --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c '
+  srun --overlap --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c '
     chmod -R u+rwx /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true
     rm -rf /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true' || true
 }
 stop_ray_cluster() {
-  srun --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c 'ray stop --force >/dev/null 2>&1 || true' || true
+  srun --overlap --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c 'ray stop --force >/dev/null 2>&1 || true' || true
   sleep 5
 }
 start_ray_cluster() {
   stop_ray_cluster
   local head_ip port=6379
-  head_ip="$(srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname -I | awk '{print $1}')"
+  head_ip="$(srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname -I | awk '{print $1}')"
   export RAY_ADDRESS="${head_ip}:${port}"
   echo "Ray head: $HEAD_NODE ($RAY_ADDRESS); nodes: ${NODES_ARR[*]}"
-  srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+  srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
     ray start --head --node-ip-address="$head_ip" --port="$port" \
     --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
   sleep 15
   local i
   for ((i=1; i<SLURM_JOB_NUM_NODES; i++)); do
-    srun --nodes=1 --ntasks=1 -w "${NODES_ARR[$i]}" \
+    srun --overlap --nodes=1 --ntasks=1 -w "${NODES_ARR[$i]}" \
       ray start --address="$RAY_ADDRESS" \
       --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
   done
