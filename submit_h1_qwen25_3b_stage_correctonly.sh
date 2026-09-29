@@ -28,6 +28,9 @@
 # Env: STAGE (1..5, required); BASE_MODEL (stage >1; default = previous stage's BEST);
 #      RESUME_FROM (default: newest checkpoint of this stage, FRESH=1 to ignore);
 #      MAX_ATTEMPTS (3); SIGMA, LEARNING_RATE, FP32_MASTER (1).
+#      Non-curriculum runs (submit_h1_qwen25_3b_onlylong.sh): OUTPUT_ROOT, PREFIX,
+#      EVAL_DATASETS override the run dir / result-file prefix / test splits, and
+#      BASE_MODEL may be the hub base itself (Qwen/Qwen2.5-3B-Instruct) at any STAGE.
 # GPUs: the trainer launches one vLLM engine per GPU that Ray can see, so the
 # job builds a Ray cluster over all allocated nodes (2 nodes x 4 GH200 = 8 engines,
 # 32 LoRAs each). Noise is seeded per (step, population index, layer), so the
@@ -67,11 +70,11 @@ cd "$SCRATCH/eggroll-vllm"
 SUFFIX="bf16"; [[ -n "$FP32_MASTER" ]] && SUFFIX="fp32master"
 SUFFIX="${SUFFIX}_sigma${SIGMA}"
 ARM="$SUFFIX"
-OUTPUT_ROOT="runs/h1_qwen25_3b_correctonly_${SUFFIX}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-runs/h1_qwen25_3b_correctonly_${SUFFIX}}"
 STAGE_DIR="$OUTPUT_ROOT/stage${STAGE}_len${STAGE}"
 CKPT_DIR="$STAGE_DIR/checkpoints"
 MERGED_DIR="$STAGE_DIR/merged"
-PREFIX="q25_3b_len${STAGE}"
+PREFIX="${PREFIX:-q25_3b_len${STAGE}}"
 BASE_LABEL_MODEL="Qwen/Qwen2.5-3B-Instruct"
 
 if [[ "$STAGE" -eq 1 ]]; then
@@ -86,7 +89,7 @@ else
   else
     echo "Stage $STAGE needs BASE_MODEL=<merged dir> or the previous stage's $PREV_BEST" >&2; exit 1
   fi
-  [[ -f "$BASE/config.json" ]] || { echo "base model dir not found: $BASE" >&2; exit 1; }
+  [[ "$BASE" == "$BASE_LABEL_MODEL" || -f "$BASE/config.json" ]] || { echo "base model dir not found: $BASE" >&2; exit 1; }
 fi
 
 # ---- Ray cluster over all allocated nodes (pattern from slurm_launch_base_n16.sh) ----
@@ -136,9 +139,11 @@ export START_LOCAL_RAY=0   # run_h1_curriculum.sh must use the cluster above, no
 trap 'stop_ray_cluster; shm_cleanup' EXIT
 shm_cleanup
 
-latest_ckpt() {   # newest checkpoint_step_N with weights, or empty
-  ls -d "$CKPT_DIR"/checkpoint_step_* 2>/dev/null | sed 's/.*checkpoint_step_//' | sort -n \
+latest_ckpt() {   # newest checkpoint_step_N with weights, or empty (never fails: a fresh
+                  # stage has no checkpoint dir, and set -e/pipefail would abort on ls's exit 2)
+  { ls -d "$CKPT_DIR"/checkpoint_step_* 2>/dev/null || true; } | sed 's/.*checkpoint_step_//' | sort -n \
     | while read -r s; do [[ -f "$CKPT_DIR/checkpoint_step_$s/model_weights.safetensors" ]] && echo "$s"; done | tail -1
+  return 0
 }
 
 # ---- 1+2: train (with retries / auto-resume) and merge ----
@@ -150,7 +155,7 @@ else
   while :; do
     resume="${RESUME_FROM:-}"
     if [[ -z "$resume" && "${FRESH:-0}" != "1" ]]; then
-      s="$(latest_ckpt)"
+      s="$(latest_ckpt || true)"
       [[ -n "$s" ]] && resume="$CKPT_DIR/checkpoint_step_$s"
     fi
     echo "=== stage $STAGE attempt $attempt/$MAX_ATTEMPTS  resume: ${resume:-none}  gpus: $EXPECTED_GPUS ==="
@@ -175,7 +180,7 @@ stop_ray_cluster   # eval below runs plain vLLM on the head node (1 GPU per mode
 
 # ---- 3: held-out eval (base + every merged step, horizons 1-4) ----
 PREFIX="$PREFIX" ARM="$ARM" MERGED="$MERGED_DIR" BASE_LABEL_MODEL="$BASE_LABEL_MODEL" \
-DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl GSM-LongHorizon/test_len_4.jsonl" \
+DATASETS="${EVAL_DATASETS:-GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl GSM-LongHorizon/test_len_4.jsonl}" \
   bash submit_eval_len2_correctonly.sh
 
 # ---- 4: select the best step (h1's rule: highest combined len_1..len_3) ----

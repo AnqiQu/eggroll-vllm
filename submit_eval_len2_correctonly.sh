@@ -91,7 +91,7 @@ cols = ["len_1", "len_2", "len_3", "len_4"]
 print(f"{'model':10s} " + " ".join(f"{c:>8s}" for c in cols))
 for label in sorted(rows, key=key):
     print(f"{label:10s} " + " ".join(f"{rows[label].get(c, float('nan')):8.2f}" for c in cols))
-print("\n(base is Qwen3-1.7B; len_2 is the trained horizon. Look for step_* > base on len_2.)")
+print("\n(base = the untrained BASE_LABEL_MODEL; compare step_* against it on the trained horizon.)")
 PYEOF
 echo
 echo "================= PAIRED ANALYSIS (len_2) ================="
