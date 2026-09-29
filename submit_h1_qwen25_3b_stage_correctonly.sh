@@ -183,6 +183,9 @@ PREFIX="$PREFIX" ARM="$ARM" MERGED="$MERGED_DIR" BASE_LABEL_MODEL="$BASE_LABEL_M
 DATASETS="${EVAL_DATASETS:-GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl GSM-LongHorizon/test_len_4.jsonl}" \
   bash submit_eval_len2_correctonly.sh
 
+# ---- 3b: committable summaries (full dumps are gitignored; see results/README.md) ----
+python summarize_results.py results/${PREFIX}_${ARM}_*.json || echo "(summarize_results.py failed; dumps are still in results/)"
+
 # ---- 4: select the best step (h1's rule: highest combined len_1..len_3) ----
 python - "$PREFIX" "$ARM" "$MERGED_DIR" "$STAGE_DIR/BEST" <<'PYEOF'
 import glob, json, os, sys
