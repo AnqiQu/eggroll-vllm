@@ -35,21 +35,20 @@ def unfuse_vllm_to_transformers(vllm_weights, model_config):
         # Remove .base_layer suffix
         clean_name = name.replace('.base_layer', '')
 
-        # Handle fused QKV
+        # Handle fused QKV. Split along dim 0, which works for the 2-D weight and for
+        # the 1-D bias (Qwen2/Qwen2.5 have attention biases; Qwen3 does not).
         if 'qkv_proj' in name:
-            prefix = clean_name.replace('qkv_proj.weight', '')
             q_size = num_attention_heads * head_dim
             kv_size = num_key_value_heads * head_dim
 
-            unfused[prefix + 'q_proj.weight'] = weight[:q_size, :]
-            unfused[prefix + 'k_proj.weight'] = weight[q_size:q_size + kv_size, :]
-            unfused[prefix + 'v_proj.weight'] = weight[q_size + kv_size:, :]
+            unfused[clean_name.replace('qkv_proj', 'q_proj')] = weight[:q_size]
+            unfused[clean_name.replace('qkv_proj', 'k_proj')] = weight[q_size:q_size + kv_size]
+            unfused[clean_name.replace('qkv_proj', 'v_proj')] = weight[q_size + kv_size:]
 
-        # Handle fused gate_up
+        # Handle fused gate_up (weight or bias)
         elif 'gate_up_proj' in name:
-            prefix = clean_name.replace('gate_up_proj.weight', '')
-            unfused[prefix + 'gate_proj.weight'] = weight[:intermediate_size, :]
-            unfused[prefix + 'up_proj.weight'] = weight[intermediate_size:, :]
+            unfused[clean_name.replace('gate_up_proj', 'gate_proj')] = weight[:intermediate_size]
+            unfused[clean_name.replace('gate_up_proj', 'up_proj')] = weight[intermediate_size:]
 
         # Handle other weights (just remove .base_layer)
         else:

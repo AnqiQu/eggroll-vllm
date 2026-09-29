@@ -498,6 +498,15 @@ class GSMLongHorizonTask:
         examples = [self.dataset[i] for i in indices]
         return self._format_examples(examples)
 
+    # Checkpoint hooks (es_lora_multinode.py calls these if present) so a
+    # --resume-from run continues through the dataset instead of restarting at
+    # question 0.
+    def get_state(self):
+        return {"idx": int(self.idx)}
+
+    def restore_state(self, state):
+        self.idx = int(state.get("idx", 0))
+
     def _sample_fitness(self, correctness, format_reward, format_ok):
         """The scalar EGGROLL optimizes for one rollout:
           correctness -> h1 correctness only (0.0 / CORRECT_REWARD)   [default]

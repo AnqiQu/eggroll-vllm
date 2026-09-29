@@ -1,0 +1,71 @@
+{
+  "model": "runs/h1_curriculum_len2_gated/stage2_len2/merged/step_299",
+  "data": "GSM-LongHorizon/train_len_2.jsonl",
+  "n_prompts": 32,
+  "rank": 1,
+  "n_perturb": 8,
+  "base": {
+    "accuracy": 0.28125,
+    "format_rate": 0.96875,
+    "mean_tokens": 292.375,
+    "entropy": 0.06980944645573958,
+    "margin": 17.854418299655826,
+    "frac_margin_lt_0p5": 0.014643009787347954,
+    "top1_prob": 0.9722104717799362,
+    "n_tokens": 9356.0
+  },
+  "sigmas": {
+    "0.001": {
+      "p_text_changed": 0.998046875,
+      "p_correct_fixed": 0.13671875,
+      "p_correct_broke": 0.09375,
+      "p_correct_changed": 0.23046875,
+      "p_format_changed": 0.21484375,
+      "first_div_frac_mean": 0.10980576546352269,
+      "pair_fitness_disagree": 0.265625,
+      "pair_correct_disagree": 0.265625,
+      "pair_format_disagree": 0.3671875,
+      "pair_identical_text": 0.0,
+      "seconds": 377.5880973339081
+    },
+    "0.003": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.046875,
+      "p_correct_broke": 0.203125,
+      "p_correct_changed": 0.25,
+      "p_format_changed": 0.330078125,
+      "first_div_frac_mean": 0.030600776440423503,
+      "pair_fitness_disagree": 0.1796875,
+      "pair_correct_disagree": 0.1796875,
+      "pair_format_disagree": 0.55078125,
+      "pair_identical_text": 0.0,
+      "seconds": 497.65651273727417
+    },
+    "0.01": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.0,
+      "p_correct_broke": 0.279296875,
+      "p_correct_changed": 0.279296875,
+      "p_format_changed": 0.96875,
+      "first_div_frac_mean": 0.0,
+      "pair_fitness_disagree": 0.00390625,
+      "pair_correct_disagree": 0.00390625,
+      "pair_format_disagree": 0.0,
+      "pair_identical_text": 0.0,
+      "seconds": 613.5147607326508
+    },
+    "0.03": {
+      "p_text_changed": 1.0,
+      "p_correct_fixed": 0.0,
+      "p_correct_broke": 0.28125,
+      "p_correct_changed": 0.28125,
+      "p_format_changed": 0.96875,
+      "first_div_frac_mean": 0.0,
+      "pair_fitness_disagree": 0.0,
+      "pair_correct_disagree": 0.0,
+      "pair_format_disagree": 0.0,
+      "pair_identical_text": 0.0,
+      "seconds": 607.4035136699677
+    }
+  }
+}

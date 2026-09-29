@@ -31,6 +31,7 @@ from peft import LoraConfig, get_peft_model
 from vllm.lora.request import LoRARequest
 from safetensors.torch import save_file, load_file
 
+from es_diagnostics import step_diagnostics, format_diagnostics
 from tasks import MathTask, CountdownTask, ZerosTask, RandomTask, GSMLongHorizonTask
 
 print("IMPORTS: All imports completed successfully", flush=True)
@@ -58,6 +59,11 @@ class Args:
     pass_at_k: bool = False
     normalize_with_std: bool = False
     scale_lr_in_grad: bool = False
+    # --- Diagnostics / numerics (see PROFESSOR_FEEDBACK_NOTES.md) ---
+    entropy_topk: int = 0        # >0: request top-k logprobs from vLLM and log diag/entropy/*
+                                 # (greedy margin, entropy) -- the entropy-collapse monitor
+    fp32_master: bool = False    # keep an fp32 master copy (CPU) of the ES-updated weights so
+                                 # sub-bf16-ulp updates accumulate instead of rounding to zero
 
     # --- LoRA Config ---
     lora_r: int = 4
@@ -278,6 +284,12 @@ class WorkerExtension:
 
         print(f"ES UPDATE: Starting streaming update for {len(peft_shapes_dict)} layers...", flush=True)
 
+        # Update-realisation diagnostic: how much of the fp32 ES step survives
+        # being added to a bf16 weight (sub-half-ulp entries round to zero).
+        upd_stats = {"n": 0, "changed": 0.0, "intended_sq": 0.0, "realised_sq": 0.0, "dot": 0.0}
+        if args.fp32_master and not hasattr(self, "_fp32_master"):
+            self._fp32_master = {}   # fused vLLM param name -> fp32 CPU master tensor
+
         # Iterate through PEFT layers one by one
         for layer_idx, (peft_name, weight_shape) in enumerate(peft_shapes_dict.items()):
             lora_b_shape, lora_a_shape = (weight_shape[0], args.lora_r), (args.lora_r, weight_shape[1])
@@ -395,6 +407,7 @@ class WorkerExtension:
                 # Column parallel: slice columns
                 if vllm_name in vllm_params:
                     target_param = vllm_params[vllm_name]
+                    target_name = vllm_name
                     # If TP > 1, the vLLM param is smaller than PEFT param
                     if target_param.shape[1] < weight_shape[1]:
                         slice_obj = (slice(None), slice(0, target_param.shape[1]))
@@ -435,6 +448,7 @@ class WorkerExtension:
                 # Column parallel
                 if vllm_name in vllm_params:
                     target_param = vllm_params[vllm_name]
+                    target_name = vllm_name
                     if target_param.shape[1] < weight_shape[1]:
                         slice_obj = (slice(None), slice(0, target_param.shape[1]))
                     else:
@@ -454,43 +468,61 @@ class WorkerExtension:
 
             # --- Apply Update ---
             if target_param is not None:
-                # Cast gradient to model dtype (float16/bfloat16)
-                grad_shard = gradient.to(dtype=target_param.dtype)
-                
                 try:
+                    # Resolve the region of the (possibly fused) vLLM param this
+                    # PEFT layer maps to, plus the matching fp32 gradient view.
+                    region, region_index, grad_fp32 = None, None, None
                     if isinstance(slice_obj, tuple): # Column parallel special case
-                        
-                        if target_param.shape[1] < grad_shard.shape[1]:
-                             grad_shard = grad_shard[:, :target_param.shape[1]]
-                        
-                        target_param.data.add_(grad_shard)
-                        
+                        cols = min(target_param.shape[1], gradient.shape[1])
+                        grad_fp32 = gradient[:, :cols]
+                        region = target_param.data[:, :cols]
+                        region_index = (slice(None), slice(0, cols))
                     elif isinstance(slice_obj, slice): # Row parallel (qkv, gate_up)
-                        
-                        # Safe Application:
                         param_size = target_param.shape[0]
                         start = slice_obj.start
                         end = min(slice_obj.stop, param_size)
-                        
                         if start < param_size:
-                            valid_grad = grad_shard[:(end-start)]
-                            target_param.data[start:end].add_(valid_grad)
-
+                            grad_fp32 = gradient[:(end - start)]
+                            region = target_param.data[start:end]
+                            region_index = (slice(start, end), slice(None))
                     else:
                         # slice_obj must always be a slice or tuple by this point;
                         # reaching here means the mapping logic above has a bug.
                         raise AssertionError(
                             f"apply_lora_es_update: slice_obj is {slice_obj!r} (type {type(slice_obj)}) "
-                            f"for layer '{vllm_name}'. This should be unreachable — "
+                            f"for layer '{vllm_name}'. This should be unreachable -- "
                             f"the mapping logic must have set target_param without setting slice_obj."
                         )
 
+                    if region is not None:
+                        before = region.detach().clone()
+                        if args.fp32_master:
+                            # fp32 master (CPU): accumulate the step exactly, then
+                            # write the bf16-rounded master back to the engine weight.
+                            master = self._fp32_master.get(target_name)
+                            if master is None:
+                                master = target_param.data.detach().to("cpu", torch.float32)
+                                self._fp32_master[target_name] = master
+                            mreg = master[region_index]
+                            mreg.add_(grad_fp32.to("cpu"))
+                            region.copy_(mreg.to(device=region.device, dtype=region.dtype))
+                        else:
+                            # Original behaviour: cast to model dtype and add in place.
+                            region.add_(grad_fp32.to(dtype=region.dtype))
+                        realised = region.float() - before.float()
+                        upd_stats["n"] += realised.numel()
+                        upd_stats["changed"] += float((realised != 0).sum())
+                        upd_stats["intended_sq"] += float((grad_fp32 * grad_fp32).sum())
+                        upd_stats["realised_sq"] += float((realised * realised).sum())
+                        upd_stats["dot"] += float((realised * grad_fp32).sum())
+                        del before, realised
+
                 except Exception as e:
-                    print(f"ERROR updating {vllm_name}: {e}. Shapes: Param {target_param.shape}, Grad {grad_shard.shape}", flush=True)
+                    print(f"ERROR updating {vllm_name}: {e}. Shapes: Param {target_param.shape}, Grad {gradient.shape}", flush=True)
             
             # 4. Clean up immediately
             del gradient
-            del grad_shard
+            grad_fp32 = None
             if chunk_start % (chunk_size * 4) == 0:
                 torch.cuda.empty_cache()
 
@@ -498,8 +530,24 @@ class WorkerExtension:
             torch.cuda.synchronize()
 
         print("ES UPDATE: Completed successfully.", flush=True)
+
+        if upd_stats["n"] > 0:
+            n = upd_stats["n"]
+            stats = {
+                "diag/update/applied_frac": upd_stats["changed"] / n,
+                "diag/update/realised_ratio": math.sqrt(upd_stats["realised_sq"] / (upd_stats["intended_sq"] + 1e-30)),
+                "diag/update/cos_realised_intended": upd_stats["dot"] / math.sqrt(upd_stats["realised_sq"] * upd_stats["intended_sq"] + 1e-30),
+                "diag/update/intended_rms": math.sqrt(upd_stats["intended_sq"] / n),
+                "diag/update/fp32_master": 1.0 if args.fp32_master else 0.0,
+            }
+            print(f"ES UPDATE DIAG: applied_frac={stats['diag/update/applied_frac']:.4f} "
+                  f"realised/intended={stats['diag/update/realised_ratio']:.3f} "
+                  f"cos={stats['diag/update/cos_realised_intended']:.3f} "
+                  f"intended_rms={stats['diag/update/intended_rms']:.3e} fp32_master={args.fp32_master}", flush=True)
+            gc.collect()
+            return stats
         gc.collect()
-        return True
+        return None
     
     def init_inter_engine_group(self, master_address: str, master_port: int, gpu_rank: int, world_size: int):
         self.device = self.model_runner.device
@@ -768,6 +816,11 @@ class ESNcclLLM(LLM):
         )
 
         # 2. Calculate fitness immediately (Local CPU)
+        # Per-(pop, prompt) diagnostics payload consumed by es_diagnostics.step_diagnostics
+        # on the head node: reward components, first-sample text/token ids (greedy
+        # collapse stats) and, if --entropy-topk > 0, per-response entropy/margin.
+        from es_diagnostics import topk_logprob_rows, entropy_stats_from_rows
+        diag = {"components": {}, "texts": [], "token_ids": [], "entropy": []}
         fitness_list = []
         distinct_counts = []
         total_responses = 0
@@ -803,6 +856,17 @@ class ESNcclLLM(LLM):
                 if k not in all_task_info:
                     all_task_info[k] = []
                 all_task_info[k].append(v)
+                diag["components"].setdefault(k, []).append(float(v))
+
+            first = output.outputs[0]
+            diag["texts"].append(first.text)
+            diag["token_ids"].append(list(first.token_ids))
+            first_lp = getattr(first, "logprobs", None)
+            if first_lp:
+                try:
+                    diag["entropy"].append(entropy_stats_from_rows(topk_logprob_rows(first_lp)))
+                except Exception as e:  # diagnostics must never kill a step
+                    print(f"DIAG WARNING: logprob parsing failed: {e}", flush=True)
 
             # Collect stats
             sample_char_lens = []
@@ -886,7 +950,7 @@ class ESNcclLLM(LLM):
         for k, v in all_task_info.items():
             info[k] = float(np.mean(v))
 
-        return fitness_list, info, responses_for_logging
+        return fitness_list, info, responses_for_logging, diag
 
 def launch_engines(num_engines, model_name, population_size, lora_r, tensor_parallel_size=1, max_tokens=1024):
     """Launches multiple vLLM engines via Ray Placement Groups.
@@ -1326,6 +1390,9 @@ def main(args: Args):
         max_tokens=args.max_tokens,
         n=args.samples_per_prompt,
         stop=[tokenizer.eos_token, "<|im_end|>", "<|endoftext|>"],
+        # --entropy-topk N: return top-N logprobs per generated token so the
+        # greedy margin / entropy diagnostics can be computed (None = off).
+        logprobs=(args.entropy_topk if args.entropy_topk > 0 else None),
     )
     do_eval = False
     if "math:" in args.task and args.steps_per_eval > 0:
@@ -1489,7 +1556,7 @@ def main(args: Args):
             results = ray.get(all_refs)
             list_of_fitness_arrays = []
             for i, res in enumerate(results):
-                (eng_fitness, info_dict, eng_sample_output) = res
+                (eng_fitness, info_dict, eng_sample_output) = res[:3]
                 # fitness is already aggregated (no samples dimension)
                 eng_fitness_np = np.array(eng_fitness)
                 list_of_fitness_arrays.append(eng_fitness_np)
@@ -1594,8 +1661,18 @@ def main(args: Args):
         
         aggregation_start = time.time()
         list_of_fitness_arrays = []
+        diag_components, diag_texts, diag_token_ids, diag_entropy = {}, [], [], []
         for i, res in enumerate(results):
-            (eng_fitness, info_dict, eng_sample_output) = res
+            (eng_fitness, info_dict, eng_sample_output) = res[:3]
+            eng_diag = res[3] if len(res) > 3 else None
+            if eng_diag is not None:
+                n_p = len(prompts)
+                for k, v in eng_diag["components"].items():
+                    diag_components.setdefault(k, []).append(
+                        np.array(v, dtype=float).reshape(loras_per_engine, n_p))
+                diag_texts.extend([eng_diag["texts"][j * n_p:(j + 1) * n_p] for j in range(loras_per_engine)])
+                diag_token_ids.extend([eng_diag["token_ids"][j * n_p:(j + 1) * n_p] for j in range(loras_per_engine)])
+                diag_entropy.extend(eng_diag["entropy"])
             # Reshape flat lists to (Loras_per_engine, Prompts)
             # fitness_list is already aggregated per (pop, prompt) - no samples dimension
             eng_fitness_np = np.array(eng_fitness).reshape(loras_per_engine, len(prompts))
@@ -1634,6 +1711,18 @@ def main(args: Args):
         print(f"PAIR DIAGNOSTIC: disagree_rate={pair_disagree_rate:.4f}, "
               f"mean|F+ - F-|={pair_absdiff_mean:.4f}", flush=True)
 
+        # --- Extended diagnostics (es_diagnostics.py, logged as diag/*) --------
+        # * signal decomposition: is the update aligned with correctness or format?
+        # * greedy-collapse stats: do +/- members still produce different text?
+        # * entropy/margin along the greedy path (only with --entropy-topk > 0)
+        diag_metrics = {}
+        try:
+            comps = {k: np.concatenate(v, axis=0) for k, v in diag_components.items()}
+            diag_metrics = step_diagnostics(fitnesses_shaped, comps, diag_texts, diag_token_ids, diag_entropy)
+            print(format_diagnostics(diag_metrics), flush=True)
+        except Exception as e:  # diagnostics must never kill a step
+            print(f"DIAG WARNING: step diagnostics failed: {e}", flush=True)
+
         # Logging
         if args.verbose:
             for pop_idx in range(2):
@@ -1657,10 +1746,13 @@ def main(args: Args):
 
         # Compute ES update ONLY on engine 0
         update_start = time.time()
-        ray.get(engines[0].collective_rpc.remote(
+        update_results = ray.get(engines[0].collective_rpc.remote(
             "apply_lora_es_update", 
             args=(normalized_fitnesses, peft_shapes_dict, es_step, args)
         ))
+        update_stats = next((r for r in (update_results or []) if isinstance(r, dict)), None)
+        if update_stats:
+            diag_metrics.update(update_stats)
         update_time = time.time() - update_start
         if args.verbose: print(f"Applied ES update on Engine 0 in {update_time:.4f}s")
 
@@ -1725,6 +1817,7 @@ def main(args: Args):
                 "std_normalized_fitness": std_normalized_fitness,
                 "pair_disagree_rate": pair_disagree_rate,
                 "pair_absdiff_mean": pair_absdiff_mean,
+                **diag_metrics,
                 "std_in_samples": std_in_samples,
                 "pass_at_k_fitness": pass_at_k_fitness,
                 "mean_sample_fitness": mean_sample_fitness,

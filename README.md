@@ -77,11 +77,14 @@ optimiser changes.
 | --- | --- |
 | `h1_math_utils.py` | **Verbatim** copy of `h1/math_utils.py` (`grade_answer` etc.), used as the answer comparator for the correctness reward. |
 | `h1_rewards.py` | h1's reward + answer-extraction functions (verbatim from `h1/grpo.py`) plus thin adapters that score a single response and sum them into a scalar fitness. |
-| `h1_gsm_eval.py` | **Vendored** copy of h1's `gsm_eval.py` (the between-stage checkpoint selector), so a clone of this repo is self-contained. Only change vs upstream: `enable_thinking=False` for Qwen3 (see below). |
+| `h1_gsm_eval.py` | **Vendored** copy of h1's `gsm_eval.py` (the between-stage checkpoint selector), so a clone of this repo is self-contained. Changes vs upstream: `enable_thinking=False` for Qwen3 (see below), and a fix so an extracted answer of `0` is not discarded as "no answer" (`rescore_heldout.py` re-scores old result files offline; `analyze_heldout.py` gives paired fixed/broke/format tables). |
 | `tasks.py` → `GSMLongHorizonTask` | New task: h1's prompts + h1's total DrGRPO reward as EGGROLL fitness. |
 | `run_h1_curriculum.sh` | Curriculum runner: trains + merges one stage per invocation, then pauses for external checkpoint selection. |
 | `run_h1_smoke.sh` | Tiny end-to-end debug run (pop 8, 4 iters, 32-question subset) to validate the whole stack in minutes before a real run. |
 | `slurm_launch_gsm_longhorizon.sh` | Slurm launch script with the experiment config block (per-stage completion lengths, EGGROLL hyperparameters, equal-compute reference). |
+| `es_diagnostics.py` | Per-step ES diagnostics logged as W&B `diag/*`: which reward axis the update is aligned with, greedy-collapse / output-diversity stats, entropy and margin from top-k logprobs (`--entropy-topk`). Unit tests in `tests/`. |
+| `es_reference.py` | **Independent** plain-PyTorch re-implementation of EGGROLL (no vLLM/Ray/PEFT, fp32 master weights) with a perturbation-sensitivity `probe` mode and a small-scale `train` mode. See `PROFESSOR_FEEDBACK_NOTES.md`. |
+| `submit_probe_sensitivity.sh`, `submit_h1_stage2_len2_correctonly.sh`, `submit_h1_stage2_len2_gated_resume.sh` | Slurm jobs for the follow-up experiments in `PROFESSOR_FEEDBACK_NOTES.md` §4. |
 
 ### The task and its reward
 
