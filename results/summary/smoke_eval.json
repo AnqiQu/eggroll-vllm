@@ -1,0 +1,18 @@
+{
+  "runs/smoke/stage1_len1/merged/step_3": {
+    "GSM-LongHorizon/test_len_1.jsonl": {
+      "accuracy": 0.625,
+      "correct": 5,
+      "total": 8,
+      "no_answer": 0,
+      "answer_rate": 1.0,
+      "avg_num_tokens_in_responses": 212.125,
+      "num_problems": 8,
+      "num_generations": 1,
+      "is_correct": [
+        "10111100"
+      ],
+      "indices": "51,209,228,285,457,501,563,1309"
+    }
+  }
+}

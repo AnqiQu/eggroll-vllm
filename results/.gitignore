@@ -5,3 +5,11 @@
 *.ckpt
 *.gguf
 *.onnx
+
+# Full eval dumps (h1_gsm_eval.py --out_file: every question and generated answer,
+# 4-7 MB each) are not committed -- see README.md. Only these JSON outputs are:
+*.json
+!summary/*.json
+!train_curves_*.json
+!probe_*.json
+!pop_*.json
