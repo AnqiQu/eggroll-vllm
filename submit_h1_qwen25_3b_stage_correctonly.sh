@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=eggroll-h1-q25-3b-conly
 #SBATCH --output=logs/eggroll-h1-q25-3b-conly-%j.out
-#SBATCH --nodes=1
-#SBATCH --gpus=4
-#SBATCH --ntasks=1
+#SBATCH --nodes=2
+#SBATCH --gpus-per-node=4
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
 #SBATCH --time=24:00:00
 
@@ -28,7 +28,12 @@
 # Env: STAGE (1..5, required); BASE_MODEL (stage >1; default = previous stage's BEST);
 #      RESUME_FROM (default: newest checkpoint of this stage, FRESH=1 to ignore);
 #      MAX_ATTEMPTS (3); SIGMA, LEARNING_RATE, FP32_MASTER (1).
-# Stage 1 on 3B: ~45 min per 50 steps at 768 tokens; later stages are longer
+# GPUs: the trainer launches one vLLM engine per GPU that Ray can see, so the
+# job builds a Ray cluster over all allocated nodes (2 nodes x 4 GH200 = 8 engines,
+# 32 LoRAs each). Noise is seeded per (step, population index, layer), so the
+# run is the same algorithm as on 4 GPUs, just spread wider. Override with e.g.
+# `sbatch --nodes=1 ...` (any node count works as long as 256 % (4*nodes) == 0).
+# Stage 1 on 3B: ~45 min per 50 steps at 768 tokens on 4 GPUs; later stages are longer
 # (more tokens per completion) and the workq QOS caps a job at 24 h. The job is
 # therefore idempotent: rerunning it resumes training from the newest checkpoint,
 # skips merges/evals that already exist and recomputes BEST, so a stage can be
@@ -84,6 +89,53 @@ else
   [[ -f "$BASE/config.json" ]] || { echo "base model dir not found: $BASE" >&2; exit 1; }
 fi
 
+# ---- Ray cluster over all allocated nodes (pattern from slurm_launch_base_n16.sh) ----
+NODES_ARR=($(scontrol show hostnames "$SLURM_JOB_NODELIST"))
+HEAD_NODE="${NODES_ARR[0]}"
+GPUS_PER_NODE="${SLURM_GPUS_PER_NODE:-4}"
+EXPECTED_GPUS=$(( GPUS_PER_NODE * SLURM_JOB_NUM_NODES ))
+
+shm_cleanup() {
+  srun --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c '
+    chmod -R u+rwx /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true
+    rm -rf /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true' || true
+}
+stop_ray_cluster() {
+  srun --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c 'ray stop --force >/dev/null 2>&1 || true' || true
+  sleep 5
+}
+start_ray_cluster() {
+  stop_ray_cluster
+  local head_ip port=6379
+  head_ip="$(srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname -I | awk '{print $1}')"
+  export RAY_ADDRESS="${head_ip}:${port}"
+  echo "Ray head: $HEAD_NODE ($RAY_ADDRESS); nodes: ${NODES_ARR[*]}"
+  srun --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+    ray start --head --node-ip-address="$head_ip" --port="$port" \
+    --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
+  sleep 15
+  local i
+  for ((i=1; i<SLURM_JOB_NUM_NODES; i++)); do
+    srun --nodes=1 --ntasks=1 -w "${NODES_ARR[$i]}" \
+      ray start --address="$RAY_ADDRESS" \
+      --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
+  done
+  # wait until every GPU has registered
+  python - "$EXPECTED_GPUS" <<'PYEOF'
+import ray, sys, time
+want = int(sys.argv[1]); ray.init(address="auto", include_dashboard=False)
+for _ in range(60):
+    have = int(ray.cluster_resources().get("GPU", 0))
+    if have >= want:
+        print(f"Ray cluster ready: {have} GPUs"); sys.exit(0)
+    time.sleep(5)
+sys.exit(f"Ray cluster only has {have} of {want} GPUs")
+PYEOF
+}
+export START_LOCAL_RAY=0   # run_h1_curriculum.sh must use the cluster above, not a local head
+trap 'stop_ray_cluster; shm_cleanup' EXIT
+shm_cleanup
+
 latest_ckpt() {   # newest checkpoint_step_N with weights, or empty
   ls -d "$CKPT_DIR"/checkpoint_step_* 2>/dev/null | sed 's/.*checkpoint_step_//' | sort -n \
     | while read -r s; do [[ -f "$CKPT_DIR/checkpoint_step_$s/model_weights.safetensors" ]] && echo "$s"; done | tail -1
@@ -101,8 +153,8 @@ else
       s="$(latest_ckpt)"
       [[ -n "$s" ]] && resume="$CKPT_DIR/checkpoint_step_$s"
     fi
-    echo "=== stage $STAGE attempt $attempt/$MAX_ATTEMPTS  resume: ${resume:-none} ==="
-    ray stop --force >/dev/null 2>&1 || true
+    echo "=== stage $STAGE attempt $attempt/$MAX_ATTEMPTS  resume: ${resume:-none}  gpus: $EXPECTED_GPUS ==="
+    start_ray_cluster
     if RESUME_FROM="$resume" BASE_MODEL="$BASE" USE_WANDB=1 WANDB_PROJECT=eggroll-h1 \
          POPULATION_SIZE="$POP" PROMPT_BATCH_SIZE=8 NUM_ITERATIONS="$NUM_ITERATIONS" \
          SIGMA="$SIGMA" LEARNING_RATE="$LEARNING_RATE" \
@@ -119,7 +171,7 @@ else
     sleep 60
   done
 fi
-ray stop --force >/dev/null 2>&1 || true
+stop_ray_cluster   # eval below runs plain vLLM on the head node (1 GPU per model)
 
 # ---- 3: held-out eval (base + every merged step, horizons 1-4) ----
 PREFIX="$PREFIX" ARM="$ARM" MERGED="$MERGED_DIR" BASE_LABEL_MODEL="$BASE_LABEL_MODEL" \
