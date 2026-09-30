@@ -92,50 +92,8 @@ else
   [[ "$BASE" == "$BASE_LABEL_MODEL" || -f "$BASE/config.json" ]] || { echo "base model dir not found: $BASE" >&2; exit 1; }
 fi
 
-# ---- Ray cluster over all allocated nodes (pattern from slurm_launch_base_n16.sh) ----
-NODES_ARR=($(scontrol show hostnames "$SLURM_JOB_NODELIST"))
-HEAD_NODE="${NODES_ARR[0]}"
-GPUS_PER_NODE="${SLURM_GPUS_PER_NODE:-4}"; GPUS_PER_NODE="${GPUS_PER_NODE##*:}"   # "gh200:4" -> 4
-EXPECTED_GPUS=$(( GPUS_PER_NODE * SLURM_JOB_NUM_NODES ))
-
-shm_cleanup() {
-  srun --overlap --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c '
-    chmod -R u+rwx /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true
-    rm -rf /dev/shm/es_lora_population_async_* /dev/shm/outputs_es_lora 2>/dev/null || true' || true
-}
-stop_ray_cluster() {
-  srun --overlap --nodes="$SLURM_JOB_NUM_NODES" --ntasks="$SLURM_JOB_NUM_NODES" bash -c 'ray stop --force >/dev/null 2>&1 || true' || true
-  sleep 5
-}
-start_ray_cluster() {
-  stop_ray_cluster
-  local head_ip port=6379
-  head_ip="$(srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" hostname -I | awk '{print $1}')"
-  export RAY_ADDRESS="${head_ip}:${port}"
-  echo "Ray head: $HEAD_NODE ($RAY_ADDRESS); nodes: ${NODES_ARR[*]}"
-  srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
-    ray start --head --node-ip-address="$head_ip" --port="$port" \
-    --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
-  sleep 15
-  local i
-  for ((i=1; i<SLURM_JOB_NUM_NODES; i++)); do
-    srun --overlap --nodes=1 --ntasks=1 -w "${NODES_ARR[$i]}" \
-      ray start --address="$RAY_ADDRESS" \
-      --num-cpus="$SLURM_CPUS_PER_TASK" --num-gpus="$GPUS_PER_NODE" --block &
-  done
-  # wait until every GPU has registered
-  python - "$EXPECTED_GPUS" <<'PYEOF'
-import ray, sys, time
-want = int(sys.argv[1]); ray.init(address="auto", include_dashboard=False)
-for _ in range(60):
-    have = int(ray.cluster_resources().get("GPU", 0))
-    if have >= want:
-        print(f"Ray cluster ready: {have} GPUs"); sys.exit(0)
-    time.sleep(5)
-sys.exit(f"Ray cluster only has {have} of {want} GPUs")
-PYEOF
-}
-export START_LOCAL_RAY=0   # run_h1_curriculum.sh must use the cluster above, not a local head
+# ---- Ray cluster over all allocated nodes + multi-node NCCL settings ----
+source slurm_ray_cluster.sh
 trap 'stop_ray_cluster; shm_cleanup' EXIT
 shm_cleanup
 
