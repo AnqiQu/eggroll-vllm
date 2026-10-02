@@ -555,6 +555,11 @@ Then update the decision tables in Sections 1.3 and 2.2.
    dependency chain via `submit_h1_qwen25_3b_chain.sh`: each stage auto-resumes,
    merges, evaluates horizons 1–4 and writes its best step to `<stage dir>/BEST`
    for the next stage. Results land in `results/q25_3b_len<S>_*.json`.
+   *Done 2026-10-02 (stages 1–4, stages 2–4 on 8 GPUs):* after stage 4, ES on
+   Qwen2.5-3B gives 85.7 / 60.0 / 40.5 / 17.4 on L-1..L-4 vs h1's Len-4 row
+   85.5 / 57.1 / 40.1 / 18.2; after stage 3, 86.5 / 58.7 / 41.2 / 14.5 vs 84.9 /
+   56.2 / 37.8 / 15.6. Same base model, same data, same selection rule; ES uses
+   ~8–64× the FLOPs per stage (see EXPERIMENT_SUMMARY.md "Same-base comparison").
 
 ---
 

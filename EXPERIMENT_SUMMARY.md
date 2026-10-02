@@ -42,7 +42,7 @@ see whether ES can improve multi-hop reasoning accuracy.
 | 9 | **bf16 control** for #8 (job 6600957; eval 6623088) | as 8 with `FP32_MASTER=0` | **Also learns, but less: test_len_2 38.6% → 47.3% (net +42), test_len_3 → 25.5%.** Training `frac_correct` trails #8 by ~4 pts from step 300 on. Objective is the main driver; fp32 master adds ~4 pts. See "bf16 vs fp32 A/B". |
 | 10 | Gated run continued 300 → 900 steps (job 6600958; eval 6623089, all steps 50–899) | resume from gated step_299, bf16 | **Small, late correctness gain once format saturates:** test_len_2 best 43.8% at step 800 (net +25), 40.0% at 899; soft-format 98%. Slower than #8/#9 at a larger step budget. See "Gated run to step 899". |
 | 11 | **Stage 3 (horizon 3)** from stage-2 step_500, same recipe (job 6634348; walltime at step 530, checkpoints 50–500 merged by `submit_merge_eval_len3.sh`, eval job 6660573; steps 550/599 via resume job 6661363) | correctness-only, fp32 master, 1280-token budget | **step_500: 76.9 / 56.0 / 36.1 / 18.5 on len 1/2/3/4** (base 76.8 / 38.6 / 14.6 / 5.4). Matches h1's Qwen2.5-3B GRPO Len-3 row on len_2 and len_4 with a 1.7B model. See "Stage 3". |
-| 12 | Same-base replication on **Qwen2.5-3B-Instruct**, stage 1 (job submitted 2026-09-18, `submit_h1_qwen25_3b_stage_correctonly.sh`) | same recipe | **Running.** |
+| 12 | Same-base replication on **Qwen2.5-3B-Instruct**, stages 1–4 (`submit_h1_qwen25_3b_chain.sh`; stage 1 jobs 6661559+6912190+6951785 on 4 GPUs, stages 2–4 jobs 6963851/6963853/6963855 on 8 GPUs over 2 nodes) | same recipe, h1's checkpoint rule between stages | **Done 2026-10-02.** Best steps 50 / 500 / 550 / 100. After stage 4: 85.7 / 60.0 / 40.5 / 17.4 on len 1/2/3/4 vs h1 Len-4 85.5 / 57.1 / 40.1 / 18.2. See "Same-base comparison". |
 
 ## The core problem
 _Status 2026-09-17: this section describes the bf16 full-reward and gated runs (#1, #5). Runs #8/#9 below (correctness-only objective, with and without the fp32 master) break the pattern, and #10 shows the gated objective eventually moves correctness too, slowly._
@@ -408,6 +408,45 @@ which the next stage uses as its base model. Resume note: the checkpoint
 stores bf16 weights, so the fp32 master restarts from those on resume; the
 sub-ulp residual of the step before the crash is lost once, same as the
 stage-3 resume that produced the step_550 result above.
+
+### Same-base comparison with h1 (2026-10-02): Qwen2.5-3B-Instruct, ES vs DrGRPO
+
+All four stages ran with the fixed recipe (correctness-only fitness, fp32 master,
+σ 1e-3, lr 2e-4, pop 256, 8 prompts/step, 600 steps/stage), each stage starting
+from the previous stage's best merged step by h1's rule (highest combined
+L-1..L-3 held-out accuracy). Stages 2–4 ran on 8 GPUs (2 nodes) after fixing
+multi-node NCCL (aws-ofi-nccl plugin, `slurm_ray_cluster.sh`); stage 3 lost a
+worker at step ~585 and auto-resumed from checkpoint 550. Held-out accuracy (%),
+greedy, h1 evaluator, same test files (1319 / 482 / 294 / 373 questions):
+
+| | L-1 | L-2 | L-3 | L-4 |
+|---|---|---|---|---|
+| Qwen2.5-3B-Instruct, untrained (h1 paper / our eval) | 82.8 / 82.1 | 35.1 / 33.8 | 20.1 / 24.5 | 6.7 / 8.3 |
+| h1 Len-2 (GRPO stages 1–2) | 85.9 | 56.2 | 28.6 | 12.1 |
+| **ES after stage 2** (step_500) | 86.4 | 58.3 | 33.7 | 11.3 |
+| h1 Len-3 (GRPO stages 1–3) | 84.9 | 56.2 | 37.8 | 15.6 |
+| **ES after stage 3** (step_550) | 86.5 | 58.7 | 41.2 | 14.5 |
+| h1 Len-4 (GRPO stages 1–4) | 85.5 | 57.1 | 40.1 | 18.2 |
+| **ES after stage 4** (step_100) | 85.7 | 60.0 | 40.5 | 17.4 |
+
+ES stage 1 (horizon-1 prompts) chose step_50: 85.0 / 52.1 / 21.8 / 7.8. Later
+stage-1 steps reach 87.0 on L-1 but lose the early L-2 gain (46–47), so h1's
+rule picks the early checkpoint. Per stage, ES matches or beats GRPO on L-1..L-3
+and is within 1 point on L-4; the best single stage-4 checkpoints on L-4 were
+steps 250 and 350 at 21.7. The untrained-model row shows our evaluator agrees
+with h1's within ~1 point on L-1/L-2 and is 2–4 points *higher* on L-3/L-4
+(greedy decoding, zero-answer fix), so gains over base are the safer comparison:
+ES +3.6 / +26.2 / +16.0 / +9.1 after stage 4 vs h1 +2.7 / +22.0 / +20.1 / +11.5.
+
+Training (population-mean correctness, 100-step means): stage 2 0.489 → 0.575,
+stage 3 0.300 → 0.355, stage 4 0.211 → 0.265. Step times on 8 GPUs: 36 s (1024
+tokens), 48 s (1280), 62 s (1536) vs 41 s on 4 GPUs at 768 tokens, i.e. ~1.5×
+from the second node. Wall-clock per stage 6.5 / 9.1 / 10.8 h; ~210 GPU-hours
+for stages 2–4 plus ~32 for stage 1. Compute caveat (see notes): ES scores
+~1.2 M rollouts per stage against h1's 300 × 16 × GPUs, roughly 8–64× h1's
+FLOPs per stage depending on their GPU count. Full dumps are on Isambard in
+`results/q25_3b_len<S>_*.json`; committed summaries in `results/summary/`;
+training curves in `results/train_curves_q25_3b.json`.
 
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
