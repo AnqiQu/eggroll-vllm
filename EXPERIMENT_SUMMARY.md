@@ -448,6 +448,49 @@ FLOPs per stage depending on their GPU count. Full dumps are on Isambard in
 `results/q25_3b_len<S>_*.json`; committed summaries in `results/summary/`;
 training curves in `results/train_curves_q25_3b.json`.
 
+## h1 GRPO baselines on Isambard (2026-10-13/14): all collapsed, blocked
+
+Goal: plain h1 GRPO (`h1/h1/grpo.py`, unmodified, via `grpo_param_noise.py
+--param_noise_sigma 0` and `submit_grpo_h1_stage.sh`) for the settings the
+authors did not release (Only-Long, 600-step stages), on Qwen2.5-3B-Instruct.
+For h1's own settings use their checkpoints `long-horizon-reasoning/Qwen-3b-GRPO-len-{1..5}`.
+
+| Run (jobs) | Settings | Best held-out (L-1 / L-2 / L-3) | Fate |
+|---|---|---|---|
+| Only-Long, 1500 steps (7389065/66) | training_args.bin settings (completion 2048, seed 42), prompt cap 1024 | step_50: 83.9 / 47.5 / 25.5 (L-4 7.8, L-5 3.9) | 20-token answers from step 150; L-1 ≈ 9 |
+| 600-step curriculum s1-s3 (7389067-69) | same | s1 step_50: 84.4 / 35.9 / 11.6 | L-2 < 5 from step 100 in every stage; s4 NODE_FAIL, s5 cancelled |
+| README stage 1, seed 5 (7404520) | README (768 tokens, prompt 512, 300 steps) | step_50: 82.7 / 30.1 / 9.5 | ~50-token answers, 51 / 2 / 0 at step 300 |
+| README stage 1, seed 42 (7404521) | README | step_50: 84.0 / 38.6 / 15.7 | 20-token answers, 7 / 1 / 0 |
+| README stage 1, seed 1 (7404522) | README | step_200: 84.5 / 31.5 / 11.9 | no collapse, but never beats base on L-2/L-3 |
+
+Base (our eval): 82.1 / 33.8 / 24.5. Zero strict-format matches in any run
+(h1's own len-1 trainer_state reaches 0.37 by step 30).
+
+Cause: h1's `count_xml` subtracts 0.001 × len(text after `"\n</answer>\n"`).
+Qwen ends with `</answer>` and no trailing newline, so the penalty covers the
+whole response. With std-normalised advantages, that is a pure length penalty
+whenever correctness ties. The authors' model learned the `"</answer>\n"`
+ending within ~30 steps; ours never did. Their stage-1 prompts are exactly +11
+tokens per step longer than the released prompt, which points to a different
+system prompt. Ask the authors for it before rerunning. The two baselines
+(held as 7404637-43) were cancelled and never ran.
+
+Files: summaries `results/summary/grpo{600,_q25_3b_onlylong5,_readme_s1_seed*}_*.json`,
+per-step training curves `results/train_curves_grpo.json`
+(`parse_grpo_trainer_state.py`, from each run's last trainer_state.json).
+
+## Post-meeting experiment code (written 2026-09-29, not yet run)
+
+- `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
+- `population_eval.py` + `submit_population_eval.sh`: evaluate the cloud θ+σε around a
+  checkpoint ("the population is the result"). Each member is a LoRA adapter served by vLLM.
+  Needs `h1_gsm_eval.py`'s `llm_kwargs`.
+- `grpo_param_noise.py`: h1 GRPO with optional parameter noise at every step, the
+  "smoothing without a population" control. With σ = 0 it is h1's `grpo.py`.
+- `submit_h1_qwen25_3b_onlylong.sh`: ES Only-Long, starting from Qwen2.5-3B-Instruct on `train_len_5`.
+- Helpers: `select_best_step.py` (h1's best-step rule), `check_prompt_lengths.py`
+  (checks from TRL's log that no prompt was truncated).
+
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
 - `EGGROLL_FORMAT_CHECK` = `strict` | `soft` (the format gate for gated mode)

@@ -85,6 +85,10 @@ optimiser changes.
 | `es_diagnostics.py` | Per-step ES diagnostics logged as W&B `diag/*`: which reward axis the update is aligned with, greedy-collapse / output-diversity stats, entropy and margin from top-k logprobs (`--entropy-topk`). Unit tests in `tests/`. |
 | `es_reference.py` | **Independent** plain-PyTorch re-implementation of EGGROLL (no vLLM/Ray/PEFT, fp32 master weights) with a perturbation-sensitivity `probe` mode and a small-scale `train` mode. See `PROFESSOR_FEEDBACK_NOTES.md`. |
 | `submit_probe_sensitivity.sh`, `submit_h1_stage2_len2_correctonly.sh`, `submit_h1_stage2_len2_gated_resume.sh` | Slurm jobs for the follow-up experiments in `PROFESSOR_FEEDBACK_NOTES.md` §4. |
+| `submit_h1_qwen25_3b_stage_correctonly.sh`, `submit_h1_qwen25_3b_chain.sh`, `slurm_ray_cluster.sh` | Qwen2.5-3B same-base replication: self-contained stage job (resume, merge, eval, best-step), the stage 1-4 chain, multi-node Ray helper. |
+| `eggroll_noise.py`, `population_eval.py`, `submit_population_eval.sh` | Evaluate the population cloud around an ES checkpoint (EGGROLL-shaped LoRA noise served by vLLM). |
+| `grpo_param_noise.py`, `submit_grpo_h1_stage.sh`, `submit_grpo_h1_runs.sh`, `check_prompt_lengths.py` | h1 GRPO baselines (σ = 0 is h1's `grpo.py`) and GRPO with EGGROLL parameter noise. See `EXPERIMENT_SUMMARY.md`, "h1 GRPO baselines". |
+| `summarize_results.py`, `parse_trainer_log.py`, `parse_grpo_trainer_state.py`, `select_best_step.py` | Results tooling: compact eval summaries, ES / GRPO training curves, h1's best-step rule. See `results/README.md`. |
 
 ### The task and its reward
 

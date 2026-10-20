@@ -9,7 +9,8 @@ without the cluster.
 | --- | --- | --- |
 | `summary/<name>.json` | per evaluated model and test split: accuracy, counts, mean output tokens, and `is_correct` (one `0`/`1` per problem, in dataset-index order) | `summarize_results.py` |
 | `summary/accuracy.csv` | one row per summary x split | `summarize_results.py` |
-| `train_curves_len*.json` | per-step training metrics parsed from trainer logs | log parser |
+| `train_curves_len*.json`, `train_curves_q25_3b.json` | per-step ES training metrics parsed from trainer logs | `parse_trainer_log.py` |
+| `train_curves_grpo.json` | per-step GRPO metrics (TRL log_history) of every h1 GRPO run | `parse_grpo_trainer_state.py` |
 | `probe_*.json` | perturbation-sensitivity probe | `es_reference.py probe` |
 | `pop_*.json` | population evaluations (per-member correctness, no text) | `population_eval.py` |
 | `es_training_charts.html` | self-contained chart page | |
