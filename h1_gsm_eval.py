@@ -66,6 +66,7 @@ class GSM8KEvaluator:
         num_generations: int = 1,
         boxed_system_prompt: bool = False,
         top_p: float = 1.0,
+        llm_kwargs: Optional[dict] = None,
     ):
         print(f"Loading model with vLLM: {model_name}  (TP={tensor_parallel_size})")
         self.model_name = model_name
@@ -81,7 +82,9 @@ class GSM8KEvaluator:
                 self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
             # ------ vLLM runtime ------------------------------------------------- #
-            self.llm = LLM(model_name, tensor_parallel_size=tensor_parallel_size, gpu_memory_utilization=0.6)
+            # llm_kwargs: extra vLLM engine args (population_eval.py passes enable_lora etc.)
+            self.llm = LLM(model_name, tensor_parallel_size=tensor_parallel_size,
+                           **{"gpu_memory_utilization": 0.6, **(llm_kwargs or {})})
 
         # ------ Prompt template --------------------------------------------- #
         self.system_prompt = XML_SYSTEM_PROMPT_BOXED if boxed_system_prompt else XML_SYSTEM_PROMPT if is_instruct else ""
