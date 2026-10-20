@@ -491,6 +491,26 @@ per-step training curves `results/train_curves_grpo.json`
 - Helpers: `select_best_step.py` (h1's best-step rule), `check_prompt_lengths.py`
   (checks from TRL's log that no prompt was truncated).
 
+## What is kept on Isambard (pruned 2026-10-20)
+
+`$SCRATCH/eggroll-vllm/runs` went from 1.9 TB to 131 GB.
+- ES runs: each stage dir keeps the BEST merged model (h1's rule, written to `BEST`), that step's
+  ES checkpoint, and the final checkpoint (so the run can resume). Any other step can be re-run
+  from those; its eval numbers are in `results/summary/`.
+- GRPO runs: no weights. Each stage dir keeps `BEST`, `eval_logs/`, `wandb/`, and the last
+  checkpoint's `trainer_state.json` + `training_args.bin`.
+- Every full eval dump `results/<prefix>_*.json` is on Isambard and in the local copy.
+
+| Run dir | BEST (merged + checkpoint) | also kept |
+|---|---|---|
+| `h1_qwen25_3b_correctonly_fp32master_sigma0.001/stage1..4` | 50 / 500 / 550 / 100 | checkpoint 599 each |
+| `h1_curriculum_len2_correctonly_fp32master_sigma0.001/stage2_len2` | 500 | 599 |
+| `h1_curriculum_len3_correctonly_fp32master_sigma0.001/stage3_len3` | 550 | 599 |
+| `h1_curriculum_len2_correctonly_bf16_sigma0.001/stage2_len2` | 599 | – |
+| `h1_curriculum_len2_gated/stage2_len2` | 700 | 899 |
+| `h1_curriculum/stage1_len1`, `h1_curriculum_pop1024/stage1_len1` | 200, 250 | 299 |
+| `h1_curriculum_correctonly/stage1_len1` (never evaluated) | 299 (last) | – |
+
 ## Config knobs added this project
 - `EGGROLL_FITNESS_MODE` = `correctness` | `total` | `gated`
 - `EGGROLL_FORMAT_CHECK` = `strict` | `soft` (the format gate for gated mode)
