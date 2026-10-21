@@ -63,7 +63,8 @@ export TRITON_CACHE_DIR="$SCRATCH/.triton_q253b_s${STAGE}_${SLURM_JOB_ID}"
 export TORCHINDUCTOR_CACHE_DIR="$SCRATCH/.inductor_q253b_s${STAGE}_${SLURM_JOB_ID}"
 mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
 
-export EGGROLL_FITNESS_MODE=correctness
+export EGGROLL_FITNESS_MODE="${EGGROLL_FITNESS_MODE:-correctness}"   # "total" = h1 correctness + format sum
+export EGGROLL_UNSTRIPPED_PROMPT="${EGGROLL_UNSTRIPPED_PROMPT:-0}"   # 1 = h1 system prompt without .strip()
 
 cd "$SCRATCH/eggroll-vllm"
 

@@ -469,6 +469,11 @@ class GSMLongHorizonTask:
         from transformers import AutoTokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.system_prompt = H1_SYSTEM_PROMPT  # verbatim h1 system prompt
+        # EGGROLL_UNSTRIPPED_PROMPT=1: h1's SYSTEM_PROMPT literal before its .strip()
+        # (the authors' fix, 2026-10-21), so the format example ends "</answer>\n" as
+        # the strict-format and xmlcount rewards expect. Matters for the "total" fitness.
+        if os.environ.get("EGGROLL_UNSTRIPPED_PROMPT", "0") == "1":
+            self.system_prompt = "\n" + H1_SYSTEM_PROMPT + "\n"
         self.idx = 0
 
     def _format_conversation(self, example):
