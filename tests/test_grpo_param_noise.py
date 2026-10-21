@@ -1,6 +1,8 @@
 """ParamNoiseCallback inside a real HF Trainer loop (tiny random Qwen2, CPU).
 Requires torch + transformers; skipped otherwise.
 Run:  python -m unittest tests.test_grpo_param_noise"""
+import ast
+import os
 import unittest
 
 try:
@@ -8,7 +10,7 @@ try:
     from transformers import Qwen2Config, Qwen2ForCausalLM, Trainer, TrainingArguments
 
     import eggroll_noise as N
-    from grpo_param_noise import ParamNoiseCallback
+    from grpo_param_noise import ParamNoiseCallback, unstripped_system_prompt
 except Exception:  # pragma: no cover
     torch = None
 
@@ -67,6 +69,21 @@ class TestParamNoiseCallback(unittest.TestCase):
         moved = targets[0][1].detach() - clean0[0]
         self.assertGreater(float(moved.abs().max()), 0.0)
         self.assertLess(float(moved.abs().max()), 5e-3)
+
+
+H1_GRPO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "h1", "h1", "grpo.py")
+
+
+@unittest.skipIf(torch is None or not os.path.exists(H1_GRPO), "needs torch and the h1 clone (h1/h1/grpo.py)")
+class TestUnstrippedSystemPrompt(unittest.TestCase):
+    def test_matches_h1_literal_before_strip(self):
+        # h1/h1/grpo.py: SYSTEM_PROMPT = """...""".strip(); read the literal itself from the source
+        tree = ast.parse(open(H1_GRPO).read())
+        call = next(n.value for n in tree.body if isinstance(n, ast.Assign)
+                    and getattr(n.targets[0], "id", None) == "SYSTEM_PROMPT")
+        literal = call.func.value.value
+        self.assertEqual(unstripped_system_prompt(literal.strip()), literal)
+        self.assertTrue(literal.endswith("</answer>\n"))
 
 
 if __name__ == "__main__":

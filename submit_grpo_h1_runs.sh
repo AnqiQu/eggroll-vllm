@@ -5,7 +5,17 @@
 #   SEED_TEST=1  gate: README stage 1 exactly (300 steps, h=1, 768 tokens) with seeds 5
 #                (README), 42 (grpo.py default) and 1, one node each, eval on test_len_1..3.
 #                Run before the two baselines: the 2026-10-13 runs collapsed to 20-50-token
-#                answers, and the README warns that training is seed-noisy.
+#                answers, and the README warns that training is seed-noisy. Ran 2026-10-14
+#                (7404520-22) with the stripped prompt and failed: UNSTRIPPED_PROMPT=0 repeats it.
+#   FIX_TEST=1   gate for the authors' fix (2026-10-21): SYSTEM_PROMPT without .strip()
+#                (submit_grpo_h1_stage.sh's default now), stage 1, 300 steps, eval on
+#                test_len_1..3, one job each:
+#                  pub_s42     the released len-1 checkpoint's training_args (2048 tokens, seed 42)
+#                  readme_s5   README stage 1 (768 tokens, seed 5)
+#                  readme_s42  README stage 1 with seed 42
+#                Pass: strict-format matches appear within ~30 steps (the authors' len-1
+#                trainer_state: 0.37 by step 30), mean length stays ~200-280 tokens, and the
+#                best step beats base on len_2.
 #   only-long    Only-Long baseline: 1,500 steps on train_len_5 from the base model (the
 #                5 x 300-step curriculum's compute, the paper's rule). Exception:
 #                MAX_PROMPT_LEN=1024, so h=5 prompts are not cut to their last 512 tokens.
@@ -15,6 +25,7 @@
 # Both baselines are evaluated on test_len_1..5 at every 50-step checkpoint.
 #
 #   SEED_TEST=1 ./submit_grpo_h1_runs.sh
+#   FIX_TEST=1 SB_OPTS="--gpus-per-node=1 --cpus-per-task=16 --mem=32G --time=6:00:00" ./submit_grpo_h1_runs.sh
 #   ./submit_grpo_h1_runs.sh                      # the two baselines
 #   AFTER=<jobid> ./submit_grpo_h1_runs.sh        # ... gated on a job (afterok)
 #   SB_OPTS="--gpus-per-node=1 --cpus-per-task=16 --mem=32G" ...   # extra sbatch options, e.g. to fit
@@ -33,6 +44,17 @@ if [[ "${SEED_TEST:-0}" == 1 ]]; then
     j=$(STAGE=1 SEED=$seed OUTPUT_ROOT="runs/grpo_h1_readme_seedtest_s$seed" PREFIX="grpo_readme_s1_seed$seed" \
         EVAL_DATASETS="$(printf 'GSM-LongHorizon/test_len_%s.jsonl ' 1 2 3)" sb "grpo-h1-seedtest-s$seed")
     echo "README stage 1, seed $seed   $j   runs/grpo_h1_readme_seedtest_s$seed  results/grpo_readme_s1_seed${seed}_plain_*"
+  done
+  exit 0
+fi
+
+if [[ "${FIX_TEST:-0}" == 1 ]]; then
+  for cfg in "pub_s42 42 2048" "readme_s5 5 768" "readme_s42 42 768"; do
+    read -r name seed maxtok <<< "$cfg"
+    j=$(STAGE=1 SEED=$seed MAX_COMPLETION=$maxtok UNSTRIPPED_PROMPT=1 \
+        OUTPUT_ROOT="runs/grpo_h1_fix_$name" PREFIX="grpo_fix_s1_$name" \
+        EVAL_DATASETS="$(printf 'GSM-LongHorizon/test_len_%s.jsonl ' 1 2 3)" sb "grpo-h1-fix-$name")
+    echo "prompt fix, $name   $j   runs/grpo_h1_fix_$name  results/grpo_fix_s1_${name}_plain_*"
   done
   exit 0
 fi

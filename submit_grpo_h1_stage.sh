@@ -28,6 +28,10 @@
 # stage and seed 42. Runs with those values (2026-10-13) collapsed to 20-50-token answers
 # by step ~100: the model never learned to end with "</answer>\n", so xmlcount's
 # 0.001/char penalty kept applying to the whole response.
+# UNSTRIPPED_PROMPT=1 (default since 2026-10-21): the authors report that the code behind
+# the released checkpoints had no .strip() on SYSTEM_PROMPT, so the format example ended
+# "</answer>\n", and that removing it with the released len-1 settings reproduces their
+# numbers. UNSTRIPPED_PROMPT=0 is the published code (all runs before 2026-10-21).
 # MAX_PROMPT_LEN: TRL keeps only the LAST max_prompt_length prompt tokens, so 512 cuts the
 # system prompt and often Step 1 of h=5 prompts (median ~590, max 776 tokens); every h<=3
 # prompt fits. Use 1024 to avoid it; check_prompt_lengths.py reports cut prompts from
@@ -51,7 +55,7 @@
 #      1: match the ES fitness), NGPUS (1), GRAD_ACCUM (16),
 #      EVAL_DATASETS (test_len_1..4, plus test_len_5 at STAGE 5),
 #      SELECT_SPLITS ("len_1 len_2 len_3"), PROMPT_CHECK_STRICT (0; 1 = fail if a prompt was cut),
-#      RESUMABLE (0).
+#      RESUMABLE (0), UNSTRIPPED_PROMPT (1).
 # Every run needs its OWN OUTPUT_ROOT and PREFIX: results go to results/<PREFIX>_<TAG>_*.json
 # and select_best_step.py reads them by pattern, so a shared prefix mixes runs
 # (cf. the 2026-09-15 collision).
@@ -86,6 +90,7 @@ EVAL_DATASETS="${EVAL_DATASETS:-$(for h in 1 2 3 4 $([[ "$STAGE" -eq 5 ]] && ech
 SELECT_SPLITS="${SELECT_SPLITS:-len_1 len_2 len_3}"
 PROMPT_CHECK_STRICT="${PROMPT_CHECK_STRICT:-0}"
 RESUMABLE="${RESUMABLE:-0}"
+UNSTRIPPED_PROMPT="${UNSTRIPPED_PROMPT:-1}"
 H1_ENV="${H1_ENV:-$SCRATCH/uv_envs/h1_env/.venv}"
 VLLM_ENV="${VLLM_ENV:-$SCRATCH/uv_envs/vllm_env/.venv}"
 
@@ -123,6 +128,8 @@ FLOAT_FLAG=""; [[ "$STAGE" -ge 2 ]] && FLOAT_FLAG="--float_reward_func"
 EXTRA=(--param_noise_sigma "$NOISE_SIGMA" --param_noise_rank "$NOISE_RANK" --param_noise_seed "$NOISE_SEED")
 [[ "$CORRECTNESS_ONLY" == "1" ]] && EXTRA+=(--correctness_only)
 [[ "$RESUMABLE" == "1" ]] && EXTRA+=(--resumable)
+PROMPT_FLAG=(); [[ "$UNSTRIPPED_PROMPT" == "1" ]] && PROMPT_FLAG=(--unstripped_system_prompt)
+EXTRA+=("${PROMPT_FLAG[@]}")
 if [[ "$NGPUS" -gt 1 ]]; then LAUNCH=("$H1_ENV/bin/accelerate" launch --num_processes "$NGPUS")
 else LAUNCH=("$H1_ENV/bin/python"); fi
 IFS=, read -ra GPUS <<< "${CUDA_VISIBLE_DEVICES:-$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd,)}"
@@ -177,7 +184,7 @@ if [[ "$TRAINED" == 0 ]] && { [[ -n "$(ckpt_steps)" ]] || compgen -G "results/${
 fi
 rm -rf "$CLAIMS"; mkdir -p "$CLAIMS"; rm -f "$STAGE_DIR/.train_finished"
 echo "stage $STAGE  base=$BASE  train=$TRAIN_DATASET  tag=$TAG  prefix=$PREFIX  out=$STAGE_DIR"
-echo "steps=$MAX_STEPS save=$SAVE_STEPS seed=$SEED prompt<=$MAX_PROMPT_LEN completion<=$MAX_COMPLETION" \
+echo "steps=$MAX_STEPS save=$SAVE_STEPS seed=$SEED prompt<=$MAX_PROMPT_LEN completion<=$MAX_COMPLETION unstripped_prompt=$UNSTRIPPED_PROMPT" \
      "train GPUs=$TRAIN_DEVS eval GPUs=${EVAL_DEVS[*]:-after training}  eval: $EVAL_DATASETS"
 TRAIN_PID=""
 if [[ "$TRAINED" == 1 ]]; then
@@ -210,7 +217,7 @@ touch "$STAGE_DIR/.train_finished"
 # ---- 2: were prompts cut? (implied prompt length per step from the log vs full length) ----
 LAST="$(ckpt_steps | tail -1)"
 if ! "$H1_ENV/bin/python" check_prompt_lengths.py --state "$CKPT_DIR/checkpoint-$LAST/trainer_state.json" \
-       --dataset "$TRAIN_DATASET" --tokenizer "$BASE" --max_prompt_length "$MAX_PROMPT_LEN"; then
+       --dataset "$TRAIN_DATASET" --tokenizer "$BASE" --max_prompt_length "$MAX_PROMPT_LEN" "${PROMPT_FLAG[@]}"; then
   [[ "$PROMPT_CHECK_STRICT" == 1 ]] && { echo "prompt check failed; stopping" >&2; exit 1; }
   echo "WARNING: prompt check failed (continuing)"
 fi

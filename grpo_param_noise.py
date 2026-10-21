@@ -30,6 +30,13 @@ Extra flags (everything else is passed to h1's grpo.py):
   --no_antithetic
   --correctness_only      zero the four format rewards (match the ES fitness);
                           default keeps h1's reward so sigma=0 reproduces h1
+  --unstripped_system_prompt
+                          use h1's SYSTEM_PROMPT without its .strip(), i.e. with the
+                          leading "\n" and the trailing "\n" after </answer>. Per the
+                          authors (2026-10-21) the code that trained the released
+                          checkpoints had no .strip(), and the trailing newline is what
+                          teaches the "</answer>\n" ending (same token count, so
+                          check_prompt_lengths.py cannot tell the two apart)
   --resumable             also save optimizer/scheduler/RNG state in every checkpoint
                           (h1 sets save_only_model=True, so its runs cannot resume)
                           and resume from the newest complete checkpoint in
@@ -115,6 +122,11 @@ def last_complete_checkpoint(output_dir: str) -> str | None:
     return os.path.join(output_dir, f"checkpoint-{max(steps)}") if steps else None
 
 
+def unstripped_system_prompt(stripped: str) -> str:
+    """h1's SYSTEM_PROMPT literal as written, before its .strip(): it opens and closes with a newline."""
+    return "\n" + stripped + "\n"
+
+
 def _zero_reward(name: str):
     def f(completions, **kwargs):
         return [0.0] * len(completions)
@@ -130,10 +142,14 @@ def main() -> None:
     ap.add_argument("--no_antithetic", action="store_true")
     ap.add_argument("--correctness_only", action="store_true")
     ap.add_argument("--resumable", action="store_true")
+    ap.add_argument("--unstripped_system_prompt", action="store_true")
     ns, rest = ap.parse_known_args()
 
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "h1", "h1"))
     import grpo as h1  # h1's trainer script; main() looks these names up at call time
+
+    if ns.unstripped_system_prompt:
+        h1.SYSTEM_PROMPT = unstripped_system_prompt(h1.SYSTEM_PROMPT)
 
     base_trainer = h1.GRPOTrainer
 

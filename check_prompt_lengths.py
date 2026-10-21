@@ -40,11 +40,17 @@ def main() -> None:
     ap.add_argument("--num_generations", type=int, default=16)
     ap.add_argument("--max_prompt_length", type=int, default=None, help="only for the report")
     ap.add_argument("--show", type=int, default=10, help="print the first N steps")
+    ap.add_argument("--unstripped_system_prompt", action="store_true", help="as grpo_param_noise.py's flag")
     args = ap.parse_args()
 
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "h1", "h1"))
-    from grpo import get_gsm8k_questions  # h1's prompt builder (system prompt + question)
+    import grpo  # h1's prompt builder get_gsm8k_questions (system prompt + question)
     from transformers import AutoTokenizer
+
+    if args.unstripped_system_prompt:
+        from grpo_param_noise import unstripped_system_prompt
+        grpo.SYSTEM_PROMPT = unstripped_system_prompt(grpo.SYSTEM_PROMPT)
+    get_gsm8k_questions = grpo.get_gsm8k_questions
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
     data = get_gsm8k_questions(args.dataset, None, None)
