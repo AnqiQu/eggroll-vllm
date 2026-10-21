@@ -22,11 +22,16 @@
 #                RESUMABLE=1 in case it outlasts the 24 h job cap (chained afterany).
 #   600-step     h1 curriculum with 600 steps per stage (exception: README uses 300),
 #                stages 1..5 chained afterok, each from the previous stage's BEST.
-# Both baselines are evaluated on test_len_1..5 at every 50-step checkpoint.
+# Both baselines are evaluated on test_len_1..5 at every 50-step checkpoint, with the
+# unstripped system prompt (UNSTRIPPED_PROMPT=1, the stage default since 2026-10-21).
+# CFG picks their settings: readme (default: README completion lengths 768..1536, seed 5 at
+# stage 1, 42 after) or pub (the released checkpoints' training_args: 2048 tokens, seed 42
+# at every stage). Output: runs/grpo_h1_fix_<CFG>_{onlylong,600steps}, results/grpo{,600}_fix_<CFG>_*.
 #
 #   SEED_TEST=1 ./submit_grpo_h1_runs.sh
 #   FIX_TEST=1 SB_OPTS="--gpus-per-node=1 --cpus-per-task=16 --mem=32G --time=6:00:00" ./submit_grpo_h1_runs.sh
-#   ./submit_grpo_h1_runs.sh                      # the two baselines
+#   ./submit_grpo_h1_runs.sh                      # the two baselines (CFG=readme)
+#   CFG=pub ./submit_grpo_h1_runs.sh              # ... with the released checkpoints' settings
 #   AFTER=<jobid> ./submit_grpo_h1_runs.sh        # ... gated on a job (afterok)
 #   SB_OPTS="--gpus-per-node=1 --cpus-per-task=16 --mem=32G" ...   # extra sbatch options, e.g. to fit
 #                partly used nodes when no node has 4 GPUs free (evals then run after training)
@@ -59,20 +64,26 @@ if [[ "${FIX_TEST:-0}" == 1 ]]; then
   exit 0
 fi
 
+CFG="${CFG:-readme}"
+case "$CFG" in
+  readme) ;;
+  pub) export SEED=42 MAX_COMPLETION=2048 ;;
+  *) echo "CFG must be readme or pub" >&2; exit 1 ;;
+esac
 DEP=(); [[ -n "${AFTER:-}" ]] && DEP=(--dependency="afterok:$AFTER")
 dep=("${DEP[@]}")
 for k in $(seq 1 "$ONLYLONG_JOBS"); do
   j=$(STAGE=5 BASE_MODEL=Qwen/Qwen2.5-3B-Instruct MAX_STEPS=1500 MAX_PROMPT_LEN=1024 RESUMABLE=1 \
-      OUTPUT_ROOT=runs/grpo_h1_readme_onlylong_promptfix PREFIX=grpo_readme_onlylong5 \
-      EVAL_DATASETS="$ALL5" sb grpo-h1r-onlylong "${dep[@]}")
-  echo "only-long job $k/$ONLYLONG_JOBS   $j   runs/grpo_h1_readme_onlylong_promptfix  results/grpo_readme_onlylong5_plain_*"
+      OUTPUT_ROOT="runs/grpo_h1_fix_${CFG}_onlylong" PREFIX="grpo_fix_${CFG}_onlylong5" \
+      EVAL_DATASETS="$ALL5" sb "grpo-fix-$CFG-onlylong" "${dep[@]}")
+  echo "only-long ($CFG) job $k/$ONLYLONG_JOBS   $j   runs/grpo_h1_fix_${CFG}_onlylong  results/grpo_fix_${CFG}_onlylong5_plain_*"
   dep=(--dependency="afterany:$j")
 done
 
 dep=("${DEP[@]}")
 for s in 1 2 3 4 5; do
-  j=$(STAGE=$s MAX_STEPS=600 OUTPUT_ROOT=runs/grpo_h1_readme_600steps PREFIX="grpo600r_q25_3b_len$s" \
-      EVAL_DATASETS="$ALL5" sb "grpo600r-h1-s$s" "${dep[@]}")
-  echo "600-step stage $s    $j   runs/grpo_h1_readme_600steps/stage${s}_len${s}  results/grpo600r_q25_3b_len${s}_plain_*"
+  j=$(STAGE=$s MAX_STEPS=600 OUTPUT_ROOT="runs/grpo_h1_fix_${CFG}_600steps" PREFIX="grpo600_fix_${CFG}_len$s" \
+      EVAL_DATASETS="$ALL5" sb "grpo600-fix-$CFG-s$s" "${dep[@]}")
+  echo "600-step ($CFG) stage $s    $j   runs/grpo_h1_fix_${CFG}_600steps/stage${s}_len${s}  results/grpo600_fix_${CFG}_len${s}_plain_*"
   dep=(--dependency="afterok:$j")
 done
