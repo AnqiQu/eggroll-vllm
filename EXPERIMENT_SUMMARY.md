@@ -503,6 +503,12 @@ different reason. Training correctness at h=5 is 0-4 %, so format is the only re
 Answers shrink to ~130-230 tokens, and held-out L-2 falls 44.6 → 12.5 (pub) and 39.2 → 2.9
 (readme) between steps 50 and 100-150. Step 50 is close to the paper's Only-Long row
 (82.7 / 43.4 / 20.4 / 3.2 / 1.5), so h1's best-step rule probably picked an early checkpoint there too.
+The paper attributes Only-Long's failure to reward sparsity. In our runs only 10-22 % of steps have
+any correct sample. Before the model learns the `</answer>\n` ending, xmlcount deducts about 1.3 per
+950-token answer, and with correctness flat that makes length the main reward signal. Once format
+saturates, 80 % of steps have zero reward variance and entropy falls 0.45 → 0.16.
+The readme Only-Long (7601034/35) was cancelled on 2026-10-21 at step ~200. The pub Only-Long
+(7601027/28) runs to 1500 steps as the equal-compute baseline.
 
 Files: summaries `results/summary/grpo{,600}_fix_*`; gate curves `results/train_curves_grpo_fix_gate.json`.
 
