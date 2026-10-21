@@ -1029,7 +1029,7 @@ def launch_engines(num_engines, model_name, population_size, lora_r, tensor_para
                 gpu_memory_utilization=gpu_mem_util,
                 trust_remote_code=True,
                 max_num_seqs=max_num_seqs,
-                max_model_len=max(1024, 512 + max_tokens),
+                max_model_len=1024 + max_tokens,  # prompt room up to 1024 tokens (h=5 prompts reach 776), so max_tokens is never cut
                 max_num_batched_tokens=max_num_batched_tokens,
                 enable_chunked_prefill=True,  
                 load_format="auto",
@@ -1071,7 +1071,7 @@ def launch_engines(num_engines, model_name, population_size, lora_r, tensor_para
             gpu_memory_utilization=0.90,  # conservative to reduce overall memory pressure
             trust_remote_code=True,
             max_num_seqs=512,  # allows parallel processing of up to 512 sequences per engine for higher throughput
-            max_model_len=max(1024, 512 + max_tokens),  # dynamic based on generation length
+            max_model_len=1024 + max_tokens,  # prompt room up to 1024 tokens (h=5 prompts reach 776), so max_tokens is never cut
             max_num_batched_tokens=args.prompt_batch_size * 2048, # controls maximum tokens processed per forward pass; larger batches = better GPU utilization and throughput
             enable_chunked_prefill=True,
             load_format="auto",  # let vLLM choose the most efficient loading method
