@@ -479,6 +479,33 @@ Files: summaries `results/summary/grpo{600,_q25_3b_onlylong5,_readme_s1_seed*}_*
 per-step training curves `results/train_curves_grpo.json`
 (`parse_grpo_trainer_state.py`, from each run's last trainer_state.json).
 
+### The authors' fix (2026-10-21): SYSTEM_PROMPT without `.strip()`
+
+According to the authors, the code behind the released checkpoints had no `.strip()`, so the
+format example ended `</answer>\n`. The token count is unchanged (57); only the last token
+differs, `>\n` instead of `>`. That is why our prompt-length comparison could not see it. It is
+the default now (`UNSTRIPPED_PROMPT=1`). Gate `FIX_TEST=1`: jobs 7601024-26, stage 1,
+300 steps, 4 GPUs each.
+
+| Gate run | strict-format (of 0.5) | train length | best held-out (L-1 / L-2 / L-3), h1's rule |
+|---|---|---|---|
+| `pub_s42` (2048 tokens, seed 42) | 0.34 at steps 31-40, 0.49-0.50 from step 50 | 200-250 | step_100: 85.6 / 37.1 / 18.0 |
+| `readme_s42` (768 tokens, seed 42) | same | 160-230 | step_300: 84.4 / 38.8 / 16.7 |
+| `readme_s5` (768 tokens, seed 5) | same | 115-175 | step_100: 84.2 / 22.2 / 8.8 (L-2 falls below base) |
+
+Base: 82.1 / 33.8 / 24.5. The format is learned within ~40 steps in every run, and there is no
+20-token collapse. Held-out gains are small, and L-3 drops 6-10 points in all three gate runs.
+The 600-step stage-1 runs of the same wave (7601029 pub, 7601036 readme seed 5; warmup and
+cosine over 600 steps) do much better by step 300: readme 85.8 / 52.5 / 27.6, pub 85.9 / 47.3 / 20.8.
+
+Only-Long (horizon 5 from base, 7601027 pub / 7601034 readme) still collapses, but for a
+different reason. Training correctness at h=5 is 0-4 %, so format is the only reward signal.
+Answers shrink to ~130-230 tokens, and held-out L-2 falls 44.6 → 12.5 (pub) and 39.2 → 2.9
+(readme) between steps 50 and 100-150. Step 50 is close to the paper's Only-Long row
+(82.7 / 43.4 / 20.4 / 3.2 / 1.5), so h1's best-step rule probably picked an early checkpoint there too.
+
+Files: summaries `results/summary/grpo{,600}_fix_*`; gate curves `results/train_curves_grpo_fix_gate.json`.
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
