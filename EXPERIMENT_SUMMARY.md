@@ -512,6 +512,49 @@ The readme Only-Long (7601034/35) was cancelled on 2026-10-21 at step ~200. The 
 
 Files: summaries `results/summary/grpo{,600}_fix_*`; gate curves `results/train_curves_grpo_fix_gate.json`.
 
+### Results of the 2026-10-21 wave (read 2026-10-22)
+
+Held-out L-1 / L-2 / L-3 / L-4 / L-5; base 82.1 / 33.8 / 23.1 / 8.3 / 3.0. BEST = h1's rule (L-1+L-2+L-3).
+
+| Run | checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 |
+|---|---|---|---|---|---|---|
+| GRPO 600-step curriculum, pub, stage 4 (7601032) | BEST step_50 | 86.4 | 60.4 | 41.2 | 16.1 | 9.8 |
+| ... stage 5 (7601033, still running) | step_50 | 87.0 | 60.2 | 41.5 | 18.8 | 9.8 |
+| GRPO 600-step curriculum, readme, stage 5 (7601040) | BEST step_100 | 86.0 | 56.4 | 32.0 | 11.5 | 5.4 |
+| paper Len-5 | | 85.97 | 58.51 | 36.39 | 18.77 | 9.82 |
+| ES curriculum stage 4 (2026-10-02) | BEST step_100 | 85.7 | 60.0 | 40.5 | 17.4 | – |
+| **ES Only-Long, correctness (7605339)** | step_500 | 86.5 | 53.9 | 28.6 | 11.5 | 6.2 |
+| | step_599 (BEST) | 85.7 | 52.7 | 33.3 | 10.2 | 5.7 |
+| ES Only-Long, h1 total reward + unstripped prompt (7605342) | BEST step_100 | 83.7 | 41.5 | 15.0 | 2.9 | 0.6 |
+| | step_599 | 84.0 | 4.1 | 0.3 | 0.3 | 0.0 |
+| GRPO Only-Long, pub, 1500 steps (7601027/28) | BEST step_50 | 84.2 | 44.6 | 22.1 | 7.5 | 3.3 |
+| | step_1450 | 82.6 | 0.8 | 0.3 | 0.3 | 0.0 |
+| paper Only-Long | | 82.71 | 43.36 | 20.41 | 3.22 | 1.49 |
+
+- **The GRPO curriculum now replicates the paper** with the released checkpoints' settings (pub):
+  stage 5 step_50 matches Len-5 on every horizon. The README settings stay 2-9 points lower.
+  Every pub BEST is early (300 / 150 / 150 / 50 of 600).
+- **ES Only-Long with correctness-only fitness learns at h=5 from base and does not collapse.**
+  Training correctness rises steadily, 2.9 % → 7.0 % (50-step means), the antithetic disagree
+  rate 0.052 → 0.112, pairs with a correctness signal 0.35 → 0.62, and outputs lengthen
+  (sampled ~2160 → 2670 chars). The predicted start (disagree ≈ 2p(1−p) ≈ 0.058 at p = 3 %)
+  held. Held-out it beats both Only-Long baselines on every horizon and doubles L-5, but it is
+  still well below the curricula on L-3..L-5, and none of the curves has flattened by step 599.
+- **With h1's format reward, ES collapses exactly like GRPO Only-Long.** Strict-format rate
+  11 % → 98 %, training correctness 3.3 % → 0.4 %, sampled output ~1980 → 440 chars: the model
+  answers only the first sub-problem in full format (fitness 2.0 from format alone). Format's
+  share of the update direction (`diag/frac_format_ok/cos_with_fitness`) is 0.6-0.9, correctness's
+  ≈ 0. L-1 stays intact while L-2..L-5 fall to ~0. So the Only-Long collapse comes from the
+  reward (format is dense, correctness at h=5 is not), not from the optimizer.
+- The GRPO Only-Long jobs finished training (1500 steps) but both died on node nid010494 with
+  `/usr/bin/tail: Input/output error` (exit 126) before the step_1500 eval and the summaries;
+  the summaries were written by hand.
+- `parse_trainer_log.py` missed the trainer's indented `reward/*` lines, so no curve file had
+  `reward/frac_correct`. Fixed (c6893ac); `results/train_curves_q25_3b.json` regenerated.
+
+Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `results/summary/grpo600_fix_*`,
+`results/summary/grpo_fix_pub_onlylong5_*`, curves `results/train_curves_q25_3b_onlylong.json`.
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
