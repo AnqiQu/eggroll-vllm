@@ -255,4 +255,7 @@ if missing:
 PYEOF
 python select_best_step.py --prefix "$PREFIX" --arm "$TAG" --merged "$MERGED_DIR" \
   --out "$STAGE_DIR/BEST" --splits $SELECT_SPLITS
+# ---- 5: committable summaries + held-out curve in W&B (project $WANDB_PROJECT) ----
+python summarize_results.py results/${PREFIX}_${TAG}_*.json || echo "(summarize_results.py failed; dumps are still in results/)"
+python log_heldout_to_wandb.py --project "$WANDB_PROJECT" "${PREFIX}_${TAG}" || echo "(W&B held-out log failed; rerun log_heldout_to_wandb.py)"
 echo "GRPO STAGE $STAGE DONE ($TAG, $PREFIX)"

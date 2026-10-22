@@ -212,7 +212,7 @@ python es_lora_multinode.py \
     --steps-per-eval -1 \
     --save-freq "$SAVE_FREQ" \
     --checkpoint-dir "$CKPT_DIR" \
-    --name-prefix "h1_stage${STAGE}_len${HORIZON}"
+    --name-prefix "${NAME_PREFIX:-h1_stage${STAGE}_len${HORIZON}}"
 
 # ==========================================================================
 # 2) MERGE this stage's EGGROLL checkpoints into standard HF models so they can

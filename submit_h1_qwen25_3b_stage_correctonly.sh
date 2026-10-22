@@ -124,7 +124,7 @@ else
          POPULATION_SIZE="$POP" PROMPT_BATCH_SIZE=8 NUM_ITERATIONS="$NUM_ITERATIONS" \
          SIGMA="$SIGMA" LEARNING_RATE="$LEARNING_RATE" \
          ENTROPY_TOPK=20 FP32_MASTER="$FP32_MASTER" \
-         OUTPUT_ROOT="$OUTPUT_ROOT" STAGE="$STAGE" ./run_h1_curriculum.sh; then
+         OUTPUT_ROOT="$OUTPUT_ROOT" STAGE="$STAGE" NAME_PREFIX="${PREFIX}_${ARM}" ./run_h1_curriculum.sh; then
       break
     else
       rc=$?
@@ -145,6 +145,7 @@ DATASETS="${EVAL_DATASETS:-GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test
 
 # ---- 3b: committable summaries (full dumps are gitignored; see results/README.md) ----
 python summarize_results.py results/${PREFIX}_${ARM}_*.json || echo "(summarize_results.py failed; dumps are still in results/)"
+python log_heldout_to_wandb.py "${PREFIX}_${ARM}" || echo "(W&B held-out log failed; rerun log_heldout_to_wandb.py)"
 
 # ---- 4: select the best step (h1's rule: highest combined len_1..len_3) ----
 python - "$PREFIX" "$ARM" "$MERGED_DIR" "$STAGE_DIR/BEST" <<'PYEOF'
