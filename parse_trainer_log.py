@@ -55,9 +55,10 @@ def parse_log(path):
                 steps[cur["step"]] = cur   # last occurrence wins
                 cur = None
                 continue
+            stripped = line.lstrip()   # the trainer indents its reward/* lines
             for prefix, ns in PREFIXES.items():
-                if line.startswith(prefix):
-                    body = line[len(prefix):]
+                if stripped.startswith(prefix):
+                    body = stripped[len(prefix):]
                     for k, v in KV_RE.findall(body):
                         key = ns + k.strip().replace(" ", "_") if prefix != "reward/" else "reward/" + k.strip()
                         key = RENAME.get(ns + k.strip(), key)
