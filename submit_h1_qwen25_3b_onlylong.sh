@@ -18,6 +18,8 @@
 #   correctness  h1 correctness only, stripped prompt: the ES curriculum's recipe
 #   total        h1's full reward (correctness + xmlcount + soft/strict format +
 #                float), unstripped system prompt: the reward GRPO Only-Long uses
+# POP (256) sets the population, SHUFFLE=1 a new random question order every pass
+# (default: file order); both are added to the run dir / result prefix when set.
 #
 # Before spending several days of 8 GPUs on this, run the cheap signal probe
 # (submit_population_eval.sh, "direct-jump probe" example): if antithetic pairs
@@ -26,6 +28,7 @@
 #   ./submit_h1_qwen25_3b_onlylong.sh                  # correctness arm, one job on 2 nodes
 #   FITNESS=total ./submit_h1_qwen25_3b_onlylong.sh    # format arm
 #   NUM_ITERATIONS=1200 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh   # extend (resumes)
+#   POP=5120 NUM_ITERATIONS=100 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 SHUFFLE=1 ./submit_h1_qwen25_3b_onlylong.sh
 #   AFTER=<jobid> ./submit_h1_qwen25_3b_onlylong.sh    # queue behind the curriculum chain
 #
 # Each job is submit_h1_qwen25_3b_stage_correctonly.sh (idempotent: resumes from
@@ -42,13 +45,19 @@ case "$FITNESS" in
   total)       TAG="_total"; export EGGROLL_FITNESS_MODE=total EGGROLL_UNSTRIPPED_PROMPT=1 ;;
   *) echo "FITNESS must be correctness or total" >&2; exit 1 ;;
 esac
+POP="${POP:-256}"
+SHUFFLE="${SHUFFLE:-0}"
+export POP EGGROLL_SHUFFLE="$SHUFFLE"
+[[ "$POP" != 256 ]] && TAG="${TAG}_pop${POP}"
+[[ "$SHUFFLE" == 1 ]] && TAG="${TAG}_shuffle"
 export STAGE=5 NUM_ITERATIONS SIGMA
 export BASE_MODEL="Qwen/Qwen2.5-3B-Instruct"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-runs/h1_qwen25_3b_onlylong${TAG}_fp32master_sigma${SIGMA}}"
 export PREFIX="${PREFIX:-q25_3b_onlylen5${TAG}}"
 export SAVE_FREQ="${SAVE_FREQ:-100}"   # 3B checkpoints are ~6 GB; 100 keeps resume loss small
 # the trainer saves at multiples of SAVE_FREQ and at the final step
-export EVAL_STEPS="${EVAL_STEPS:-$(seq -s ' ' 100 100 $((NUM_ITERATIONS-1))) $((NUM_ITERATIONS-1))}"
+EVAL_EVERY="${EVAL_EVERY:-100}"   # must be a multiple of SAVE_FREQ
+export EVAL_STEPS="${EVAL_STEPS:-$(seq -s ' ' "$EVAL_EVERY" "$EVAL_EVERY" $((NUM_ITERATIONS-1))) $((NUM_ITERATIONS-1))}"
 export EVAL_DATASETS="GSM-LongHorizon/test_len_1.jsonl GSM-LongHorizon/test_len_2.jsonl GSM-LongHorizon/test_len_3.jsonl GSM-LongHorizon/test_len_4.jsonl GSM-LongHorizon/test_len_5.jsonl"
 export FRESH=0
 

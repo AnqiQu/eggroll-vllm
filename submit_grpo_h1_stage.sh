@@ -100,7 +100,8 @@ export HF_HOME="$SCRATCH/hf_cache"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export WANDB_MODE=offline   # h1's grpo.py calls wandb.init and reports to wandb
+export WANDB_MODE="${WANDB_MODE:-online}"   # h1's grpo.py calls wandb.init and reports to wandb
+WANDB_PROJECT="${WANDB_PROJECT:-eggroll-h1}"   # same project as the ES runs (h1 hardcodes long-horizon-reasoning)
 cd "$SCRATCH/eggroll-vllm"
 
 if [[ "$NOISE_SIGMA" == "0" ]]; then TAG="plain"; else TAG="noise_sigma${NOISE_SIGMA}_r${NOISE_RANK}"; fi
@@ -130,6 +131,7 @@ EXTRA=(--param_noise_sigma "$NOISE_SIGMA" --param_noise_rank "$NOISE_RANK" --par
 [[ "$RESUMABLE" == "1" ]] && EXTRA+=(--resumable)
 PROMPT_FLAG=(); [[ "$UNSTRIPPED_PROMPT" == "1" ]] && PROMPT_FLAG=(--unstripped_system_prompt)
 EXTRA+=("${PROMPT_FLAG[@]}")
+EXTRA+=(--wandb_project "$WANDB_PROJECT")
 if [[ "$NGPUS" -gt 1 ]]; then LAUNCH=("$H1_ENV/bin/accelerate" launch --num_processes "$NGPUS")
 else LAUNCH=("$H1_ENV/bin/python"); fi
 IFS=, read -ra GPUS <<< "${CUDA_VISIBLE_DEVICES:-$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd,)}"

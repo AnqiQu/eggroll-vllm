@@ -27,7 +27,7 @@
 #
 # Env: STAGE (1..5, required); BASE_MODEL (stage >1; default = previous stage's BEST);
 #      RESUME_FROM (default: newest checkpoint of this stage, FRESH=1 to ignore);
-#      MAX_ATTEMPTS (3); SIGMA, LEARNING_RATE, FP32_MASTER (1).
+#      MAX_ATTEMPTS (3); SIGMA, LEARNING_RATE, FP32_MASTER (1); POP (256).
 #      Non-curriculum runs (submit_h1_qwen25_3b_onlylong.sh): OUTPUT_ROOT, PREFIX,
 #      EVAL_DATASETS override the run dir / result-file prefix / test splits, and
 #      BASE_MODEL may be the hub base itself (Qwen/Qwen2.5-3B-Instruct) at any STAGE.
@@ -41,7 +41,7 @@
 # therefore idempotent: rerunning it resumes training from the newest checkpoint,
 # skips merges/evals that already exist and recomputes BEST, so a stage can be
 # spread over several 24 h jobs (submit_h1_qwen25_3b_chain.sh does this).
-POP=256
+POP="${POP:-256}"
 STAGE="${STAGE:?Set STAGE=1..5}"
 FP32_MASTER="${FP32_MASTER-1}"
 [[ "$FP32_MASTER" == "0" ]] && FP32_MASTER=""
@@ -65,6 +65,7 @@ mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
 
 export EGGROLL_FITNESS_MODE="${EGGROLL_FITNESS_MODE:-correctness}"   # "total" = h1 correctness + format sum
 export EGGROLL_UNSTRIPPED_PROMPT="${EGGROLL_UNSTRIPPED_PROMPT:-0}"   # 1 = h1 system prompt without .strip()
+export EGGROLL_SHUFFLE="${EGGROLL_SHUFFLE:-0}"   # 1 = new random question order every pass
 
 cd "$SCRATCH/eggroll-vllm"
 

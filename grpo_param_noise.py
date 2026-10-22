@@ -143,6 +143,7 @@ def main() -> None:
     ap.add_argument("--correctness_only", action="store_true")
     ap.add_argument("--resumable", action="store_true")
     ap.add_argument("--unstripped_system_prompt", action="store_true")
+    ap.add_argument("--wandb_project", default=None, help="override h1's hardcoded W&B project")
     ns, rest = ap.parse_known_args()
 
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "h1", "h1"))
@@ -150,6 +151,9 @@ def main() -> None:
 
     if ns.unstripped_system_prompt:
         h1.SYSTEM_PROMPT = unstripped_system_prompt(h1.SYSTEM_PROMPT)
+    if ns.wandb_project:
+        wandb_init = h1.wandb.init
+        h1.wandb.init = lambda *a, **k: wandb_init(*a, **{**k, "project": ns.wandb_project})
 
     base_trainer = h1.GRPOTrainer
 

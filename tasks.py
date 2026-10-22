@@ -436,6 +436,12 @@ class GSMLongHorizonTask:
         # h1's exact XML structure; "soft" = reasoning-then-answer order only.
         # Toggle with EGGROLL_FORMAT_CHECK=soft.
         self.strict_format = os.environ.get("EGGROLL_FORMAT_CHECK", "strict") == "strict"
+        # EGGROLL_SHUFFLE=1: visit the questions in a fresh random order on every pass over
+        # the split (seeded by (seed, pass), so a resume from idx alone replays the same order).
+        # Default: file order, like h1's shuffle_dataset=False.
+        self.reshuffle_each_pass = os.environ.get("EGGROLL_SHUFFLE", "0") == "1"
+        self.seed = seed
+        self._order_pass, self._order = None, None
         self.batch_size = batch_size
         self.apply_chat_template = apply_chat_template
         # Qwen3 chat template defaults to enable_thinking=True (emits a
@@ -497,9 +503,20 @@ class GSMLongHorizonTask:
         batch_answers = [e["final_answer"] for e in examples]
         return batch_prompts, batch_answers
 
+    def _pass_order(self, k):
+        if self._order_pass != k:
+            self._order = np.random.default_rng([self.seed, k]).permutation(len(self.dataset))
+            self._order_pass = k
+        return self._order
+
     def get_batch(self):
-        indices = np.arange(self.idx, self.idx + self.batch_size) % len(self.dataset)
+        n = len(self.dataset)
+        positions = np.arange(self.idx, self.idx + self.batch_size)
         self.idx += self.batch_size
+        if self.reshuffle_each_pass:
+            indices = [self._pass_order(p // n)[p % n] for p in positions]
+        else:
+            indices = positions % n
         examples = [self.dataset[i] for i in indices]
         return self._format_examples(examples)
 
