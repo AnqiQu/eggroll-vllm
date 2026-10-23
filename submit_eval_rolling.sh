@@ -125,7 +125,7 @@ while :; do
       [[ -n "$line" ]] || continue
       read -r _s prefix label ckpt model <<<"$line"
       [[ ${fails[$prefix/$label]:-0} -lt 2 ]] || continue
-      printf '%s\n' "${item_of[@]:-}" | grep -qxF "$line" && continue
+      printf '%s\n' "${item_of[@]:-}" | grep -qxF -- "$line" && continue
       g=""; for ((i = 0; i < NGPU; i++)); do [[ -z "${pid_of[$i]:-}" ]] && { g=$i; break; }; done
       [[ -n "$g" ]] || break
       echo "=== start $prefix $label on gpu $g"
