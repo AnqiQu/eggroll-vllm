@@ -519,7 +519,7 @@ Held-out L-1 / L-2 / L-3 / L-4 / L-5; base 82.1 / 33.8 / 23.1 / 8.3 / 3.0. BEST 
 | Run | checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 |
 |---|---|---|---|---|---|---|
 | GRPO 600-step curriculum, pub, stage 4 (7601032) | BEST step_50 | 86.4 | 60.4 | 41.2 | 16.1 | 9.8 |
-| ... stage 5 (7601033, still running) | step_50 | 87.0 | 60.2 | 41.5 | 18.8 | 9.8 |
+| ... stage 5 (7601033; done, see the 2026-10-22 wave) | step_50 | 87.0 | 60.2 | 41.5 | 18.8 | 9.8 |
 | GRPO 600-step curriculum, readme, stage 5 (7601040) | BEST step_100 | 86.0 | 56.4 | 32.0 | 11.5 | 5.4 |
 | paper Len-5 | | 85.97 | 58.51 | 36.39 | 18.77 | 9.82 |
 | ES curriculum stage 4 (2026-10-02) | BEST step_100 | 85.7 | 60.0 | 40.5 | 17.4 | – |
@@ -554,6 +554,33 @@ Held-out L-1 / L-2 / L-3 / L-4 / L-5; base 82.1 / 33.8 / 23.1 / 8.3 / 3.0. BEST 
 
 Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `results/summary/grpo600_fix_*`,
 `results/summary/grpo_fix_pub_onlylong5_*`, curves `results/train_curves_q25_3b_onlylong.json`.
+
+### Results of the 2026-10-22 wave (read 2026-10-23)
+
+| Run | checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 |
+|---|---|---|---|---|---|---|
+| GRPO 600-step curriculum, pub, stage 5 (7601033, done) | BEST step_200 | 86.0 | 60.8 | 42.5 | 18.8 | 11.6 |
+| | step_600 | 84.8 | 60.0 | 38.8 | 16.6 | 9.8 |
+| ES Only-Long, correctness, extended to 1200 (7627649) | step_800 | 86.4 | 57.1 | 32.3 | 15.8 | 7.4 |
+| | BEST step_1000 | 85.7 | 58.7 | 35.0 | 15.3 | 10.1 |
+| | step_1199 | 85.8 | 58.9 | 34.7 | 20.6 | 7.4 |
+| GRPO Only-Long, pub, correctness-only (7626849) | BEST step_100 | 83.2 | 44.0 | 23.5 | 5.9 | 1.5 |
+| | step_1500 | 85.7 | 0.8 | 0.3 | 0.3 | 0.0 |
+
+- **ES Only-Long keeps improving past 600 steps.** Training correctness (50-step means)
+  7.4 % → 11.4 % over steps 600-1199, still rising; disagree 0.120 → 0.162. Held-out L-2..L-4
+  rise ~6-10 points over the 600-step model; L-5 peaks at 10.1 (step 1000), level with the GRPO
+  curriculum stage 5 and the paper's Len-5, while L-3 (35) stays below the GRPO curriculum (42).
+- **GRPO Only-Long with correctness only still collapses held-out** (L-2 44.0 at step 100 →
+  ~1 from step 250; only sub-problem 1 gets answered), even though its training correctness
+  rises. Not yet explained (open).
+- ES pop 5120 × 100 steps (7626851 file order, 7626853 shuffle): a NODE_FAIL at 2026-10-23 04:52
+  killed both; Slurm requeued them and they resumed from checkpoint_step_20 (lost ~8 steps each).
+  At steps 28 / 26 on 2026-10-23 13:00, ~37 min per step. Their evals run only when a job ends
+  inside its time limit, so no held-out numbers yet.
+
+Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
+`results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
 
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
