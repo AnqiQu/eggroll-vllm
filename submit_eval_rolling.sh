@@ -20,6 +20,7 @@
 #
 #   sbatch submit_eval_rolling.sh                       # the two pop-5120 arms
 #   RUNS="runs/<dir>:<prefix> ..." FINAL_STEP=599 sbatch submit_eval_rolling.sh
+#   NGPU=1 sbatch --gpus-per-node=1 --cpus-per-task=16 --mem=120G submit_eval_rolling.sh   # starts sooner on a full cluster
 #   DRY_RUN=1 bash submit_eval_rolling.sh               # print what it would evaluate
 #
 # It polls every POLL seconds, stops when every run has saved FINAL_STEP and all
@@ -112,7 +113,10 @@ while :; do
   all_done && [[ ${#pid_of[@]} -eq 0 ]] && { echo "ALL ROLLING EVALS DONE"; break; }
   over=$(( $(date +%s) - start > BUDGET_S ))
   if [[ "$over" == 1 && ${#pid_of[@]} -eq 0 ]]; then
-    echo "time budget used; resubmitting"; sbatch submit_eval_rolling.sh; break
+    echo "time budget used; resubmitting"   # with this job's GPUs / CPUs / memory (env, incl. NGPU, is exported)
+    sbatch --gpus-per-node="$NGPU" --cpus-per-task="${SLURM_CPUS_PER_TASK:-64}" \
+      ${SLURM_MEM_PER_NODE:+--mem=${SLURM_MEM_PER_NODE}M} submit_eval_rolling.sh
+    break
   fi
 
   # dispatch to free GPUs (not after the budget; skip items that failed twice)
