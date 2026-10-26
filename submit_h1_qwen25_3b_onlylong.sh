@@ -19,7 +19,8 @@
 #   total        h1's full reward (correctness + xmlcount + soft/strict format +
 #                float), unstripped system prompt: the reward GRPO Only-Long uses
 # POP (256) sets the population, SHUFFLE=1 a new random question order every pass
-# (default: file order); both are added to the run dir / result prefix when set.
+# (default: file order), LEARNING_RATE (2e-4) the lr; each is added to the run dir /
+# result prefix when not the default.
 #
 # Before spending several days of 8 GPUs on this, run the cheap signal probe
 # (submit_population_eval.sh, "direct-jump probe" example): if antithetic pairs
@@ -29,6 +30,7 @@
 #   FITNESS=total ./submit_h1_qwen25_3b_onlylong.sh    # format arm
 #   NUM_ITERATIONS=1200 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh   # extend (resumes)
 #   POP=5120 NUM_ITERATIONS=100 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 SHUFFLE=1 ./submit_h1_qwen25_3b_onlylong.sh
+#   POP=5120 LEARNING_RATE=0.004 NUM_ITERATIONS=50 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh
 #   AFTER=<jobid> ./submit_h1_qwen25_3b_onlylong.sh    # queue behind the curriculum chain
 #
 # Each job is submit_h1_qwen25_3b_stage_correctonly.sh (idempotent: resumes from
@@ -47,10 +49,12 @@ case "$FITNESS" in
 esac
 POP="${POP:-256}"
 SHUFFLE="${SHUFFLE:-0}"
+LEARNING_RATE="${LEARNING_RATE:-0.0002}"
 export POP EGGROLL_SHUFFLE="$SHUFFLE"
 [[ "$POP" != 256 ]] && TAG="${TAG}_pop${POP}"
 [[ "$SHUFFLE" == 1 ]] && TAG="${TAG}_shuffle"
-export STAGE=5 NUM_ITERATIONS SIGMA
+[[ "$LEARNING_RATE" != 0.0002 ]] && TAG="${TAG}_lr${LEARNING_RATE}"
+export STAGE=5 NUM_ITERATIONS SIGMA LEARNING_RATE
 export BASE_MODEL="Qwen/Qwen2.5-3B-Instruct"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-runs/h1_qwen25_3b_onlylong${TAG}_fp32master_sigma${SIGMA}}"
 export PREFIX="${PREFIX:-q25_3b_onlylen5${TAG}}"
