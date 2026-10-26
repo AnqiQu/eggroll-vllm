@@ -75,7 +75,7 @@ all_done() {   # every run saved FINAL_STEP and nothing earlier is left (twice-f
   return 0
 }
 
-declare -A pid_of item_of fails   # gpu -> pid / pending line; "<prefix>/<label>" -> failures
+declare -A pid_of=() item_of=() fails=()   # gpu -> pid / pending line; "<prefix>/<label>" -> failures (=() lets set -u see them empty)
 if [[ "$DRY_RUN" == "1" ]]; then pending; all_done && echo "(all done)"; exit 0; fi
 
 run_one() {   # gpu prefix label ckpt model: merge if needed, then evaluate on that GPU

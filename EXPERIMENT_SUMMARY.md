@@ -577,7 +577,35 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 - ES pop 5120 × 100 steps (7626851 file order, 7626853 shuffle): a NODE_FAIL at 2026-10-23 04:52
   killed both; Slurm requeued them and they resumed from checkpoint_step_20 (lost ~8 steps each).
   At steps 28 / 26 on 2026-10-23 13:00, ~37 min per step. Their evals run only when a job ends
-  inside its time limit, so no held-out numbers yet.
+  inside its time limit, so `submit_eval_rolling.sh` (1 GPU, job 7661236) evaluated each
+  checkpoint as it was saved. Results below (finished 2026-10-26).
+
+### ES Only-Long with population 5120, 100 steps (finished 2026-10-26)
+
+| Run | checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 |
+|---|---|---|---|---|---|---|
+| pop 5120, file order (7626851 → 52 → 7627797) | step_20 | 84.4 | 49.6 | 25.9 | 6.7 | 3.9 |
+| | BEST step_80 | 84.3 | 51.5 | 27.6 | 10.2 | 2.7 |
+| | step_99 | 84.8 | 52.3 | 22.1 | 9.7 | 2.1 |
+| pop 5120, per-pass shuffle (7626853 → 54 → 7627798) | step_20 | 84.2 | 46.5 | 23.8 | 8.8 | 4.2 |
+| | BEST step_60 | 84.7 | 53.3 | 26.2 | 9.1 | 3.6 |
+| | step_99 | 83.9 | 52.3 | 26.2 | 8.0 | 3.9 |
+| pop 256, same recipe | step_100 | 84.1 | 52.7 | 23.1 | 8.8 | 3.0 |
+| | step_1000 | 85.7 | 58.7 | 35.0 | 15.3 | 10.1 |
+
+- **20× the population did not help per step.** After 100 steps both pop-5120 arms are where
+  pop 256 is after 100 steps, held-out and in training: training correctness (10-step means)
+  stays ~3.5-4.5 % over steps 20-89 (pop 256: ~3 % over steps 0-99), disagree ~0.06-0.09.
+  Per rollout it is far worse: pop 5120 × 8 prompts × 100 steps = 4.1M rollouts, more than
+  pop 256 × 8 × 1200 steps (2.5M), which is far ahead on L-2..L-5.
+- With the update normalised (std of the fitnesses) and lr fixed, each step moves the weights by
+  about the same amount whatever the population; a bigger population only makes the direction
+  less noisy. That this changed nothing suggests the pop-256 direction is not the bottleneck,
+  the number of updates is. Untested: a larger lr with the larger population.
+- Shuffling the question order made no difference.
+- Logs: a NODE_FAIL (2026-10-25 10:40) hit the third job of each arm; the requeue finished
+  training, but each requeue truncates the job's .out file, so steps 86-99 of the training
+  log are lost (checkpoints, evals and W&B are intact).
 
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
