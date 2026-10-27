@@ -66,6 +66,7 @@ mkdir -p "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR"
 export EGGROLL_FITNESS_MODE="${EGGROLL_FITNESS_MODE:-correctness}"   # "total" = h1 correctness + format sum
 export EGGROLL_UNSTRIPPED_PROMPT="${EGGROLL_UNSTRIPPED_PROMPT:-0}"   # 1 = h1 system prompt without .strip()
 export EGGROLL_SHUFFLE="${EGGROLL_SHUFFLE:-0}"   # 1 = new random question order every pass
+export EGGROLL_FORMAT_CHECK="${EGGROLL_FORMAT_CHECK:-strict}"   # format gate of the "gated" fitness: strict | soft
 
 cd "$SCRATCH/eggroll-vllm"
 
@@ -76,7 +77,7 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-runs/h1_qwen25_3b_correctonly_${SUFFIX}}"
 STAGE_DIR="$OUTPUT_ROOT/stage${STAGE}_len${STAGE}"
 CKPT_DIR="$STAGE_DIR/checkpoints"
 MERGED_DIR="$STAGE_DIR/merged"
-PREFIX="${PREFIX:-q25_3b_len${STAGE}}"
+PREFIX="${PREFIX:-q25_3b${RUN_TAG:-}_len${STAGE}}"   # RUN_TAG (e.g. _total) keeps another curriculum's results apart
 BASE_LABEL_MODEL="Qwen/Qwen2.5-3B-Instruct"
 
 if [[ "$STAGE" -eq 1 ]]; then

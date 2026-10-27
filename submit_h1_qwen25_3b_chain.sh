@@ -7,6 +7,9 @@
 #   NODES=1 ./submit_h1_qwen25_3b_chain.sh    # 4 GPUs
 #   START_STAGE=2 END_STAGE=4 ./submit_h1_qwen25_3b_chain.sh
 #   AFTER=<jobid> START_STAGE=2 ./submit_h1_qwen25_3b_chain.sh   # hang off an existing job
+#   # h1's full reward with the unstripped prompt, own run dir and result prefix (q25_3b_total_len<S>):
+#   EGGROLL_FITNESS_MODE=total EGGROLL_UNSTRIPPED_PROMPT=1 RUN_TAG=_total \
+#     OUTPUT_ROOT=runs/h1_qwen25_3b_total_fp32master_sigma0.001 END_STAGE=2 ./submit_h1_qwen25_3b_chain.sh
 #
 # The workq QOS caps a job at 24 h, and stages 3-4 on the 3B model can take
 # longer, so each stage gets JOBS_PER_STAGE[stage] chained 24 h jobs

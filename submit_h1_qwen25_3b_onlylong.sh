@@ -18,6 +18,9 @@
 #   correctness  h1 correctness only, stripped prompt: the ES curriculum's recipe
 #   total        h1's full reward (correctness + xmlcount + soft/strict format +
 #                float), unstripped system prompt: the reward GRPO Only-Long uses
+#   gated        1 iff correct AND well formatted (FORMAT_CHECK soft (default) | strict),
+#                unstripped prompt: format without the format-only payoff that
+#                collapses the total arm (EXPERIMENT_SUMMARY, 2026-10-27)
 # POP (256) sets the population, SHUFFLE=1 a new random question order every pass
 # (default: file order), LEARNING_RATE (2e-4) the lr; each is added to the run dir /
 # result prefix when not the default.
@@ -28,6 +31,7 @@
 #
 #   ./submit_h1_qwen25_3b_onlylong.sh                  # correctness arm, one job on 2 nodes
 #   FITNESS=total ./submit_h1_qwen25_3b_onlylong.sh    # format arm
+#   FITNESS=gated NODES=1 NUM_ITERATIONS=200 SAVE_FREQ=50 EVAL_EVERY=50 ./submit_h1_qwen25_3b_onlylong.sh
 #   NUM_ITERATIONS=1200 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh   # extend (resumes)
 #   POP=5120 NUM_ITERATIONS=100 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 SHUFFLE=1 ./submit_h1_qwen25_3b_onlylong.sh
 #   POP=5120 LEARNING_RATE=0.004 NUM_ITERATIONS=50 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh
@@ -46,7 +50,9 @@ FITNESS="${FITNESS:-correctness}"
 case "$FITNESS" in
   correctness) TAG="";       export EGGROLL_FITNESS_MODE=correctness EGGROLL_UNSTRIPPED_PROMPT=0 ;;
   total)       TAG="_total"; export EGGROLL_FITNESS_MODE=total EGGROLL_UNSTRIPPED_PROMPT=1 ;;
-  *) echo "FITNESS must be correctness or total" >&2; exit 1 ;;
+  gated)       FORMAT_CHECK="${FORMAT_CHECK:-soft}"; TAG="_gated${FORMAT_CHECK}"
+               export EGGROLL_FITNESS_MODE=gated EGGROLL_UNSTRIPPED_PROMPT=1 EGGROLL_FORMAT_CHECK="$FORMAT_CHECK" ;;
+  *) echo "FITNESS must be correctness, total or gated" >&2; exit 1 ;;
 esac
 POP="${POP:-256}"
 SHUFFLE="${SHUFFLE:-0}"
