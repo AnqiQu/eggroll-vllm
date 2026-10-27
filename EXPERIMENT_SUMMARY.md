@@ -745,6 +745,31 @@ stripped-prompt one (small sample, 97 completions).
 
 The gated run is on 1 node so that the total stays within 8 nodes while pop 5120 uses 5.
 
+## Noise on ES vs GRPO checkpoints (population eval, submitted 2026-10-27)
+
+Experiments 2 + 4a of the 2026-09-25 meeting plan: add EGGROLL-shaped noise (rank 1, the 7
+projections of every layer, antithetic pairs, same draws for every model) to an ES and a GRPO
+checkpoint of equal accuracy, and score 32 noisy copies on the next horizon. Sharpness = how much
+accuracy the copies lose; coverage@32 / rescued = how many next-horizon problems some copy solves,
+against 32 temperature-1 samples of the same model. GRPO checkpoints are our pub 600-step
+curriculum's BEST steps (h1's rule; h1's README also starts each stage from the previous best).
+
+| Pair | Models (held-out L-1 / L-2 / L-3) | Scored on | Jobs |
+|---|---|---|---|
+| stage 1 | ES s1 step 50 (85.0 / 52.1 / 21.8) vs GRPO pub s1 step 300 (85.9 / 47.3 / 20.8) | test_len_2 (482) | 7766748, 7766751 |
+| stage 2 | ES s2 step 500 (86.4 / 58.3 / 33.7) vs GRPO pub s2 step 150 (87.1 / 58.9 / 38.1) | test_len_3 (294) | 7766752, 7766753 |
+
+σ ∈ {0, 5e-4, 1e-3, 2e-3}; results `results/pop_{s1_on_len2,s2_on_len3}_<label>.json`.
+Smoke tests (7766574, 7766633; 16 problems, 4 copies) found two things that shape the reading:
+- vLLM's LoRA path alone changed 28-41% of greedy answers vs the plain path, so the centre is
+  now generated through a zero adapter (`centre`; the plain-path run is kept as `centre_plain`).
+- Generation is not deterministic at this length: even through the same path, about a third of
+  extracted answers (mostly wrong ones) differ between identical models, and correctness
+  occasionally flips. The σ = 0 block (32 identical copies) is the noise floor for coverage,
+  rescued and broken; compare the σ > 0 blocks against it, not against 0.
+- `--gpus=1` failed at vLLM init on a shared node; the script now asks for the GPU like the
+  rolling eval (`--gpus-per-node=1 --mem=120G`).
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
