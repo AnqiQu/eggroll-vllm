@@ -736,6 +736,15 @@ correctness only, the format drifts. Base behaviour differs with the prompt: 62 
 are multi-block in the first 25 steps of the unstripped-prompt run vs 20 % in the first 400 of the
 stripped-prompt one (small sample, 97 completions).
 
+### Format retests (submitted 2026-10-27)
+
+| Run | Jobs | Settings | Question |
+|---|---|---|---|
+| ES Only-Long, gated | 7763808 → 09 (1 node) | `FITNESS=gated`, soft format gate, unstripped prompt, 200 steps, eval every 50; `runs/h1_qwen25_3b_onlylong_gatedsoft_fp32master_sigma0.001`, results `q25_3b_onlylen5_gatedsoft_*` | Can format be in the objective without the step-1-only collapse? Compare with the total arm (7605342) and correctness only at steps 50-200. |
+| ES curriculum stages 1-2, h1's full reward | s1 7763810 → 11, s2 7763812 → 13 (2 nodes) | `EGGROLL_FITNESS_MODE=total`, unstripped prompt, 600 steps per stage, h1's checkpoint rule between stages; `runs/h1_qwen25_3b_total_fp32master_sigma0.001`, results `q25_3b_total_len<S>_*` | Does ES work with h1's reward once the prompt is fixed? Never tested: the only earlier full-reward curriculum run (#1) was stage 1 on Qwen3-1.7B, bf16, stripped prompt. Compare with the correctness-only curriculum (`q25_3b_len<S>_*`) and our GRPO curriculum. |
+
+The gated run is on 1 node so that the total stays within 8 nodes while pop 5120 uses 5.
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
