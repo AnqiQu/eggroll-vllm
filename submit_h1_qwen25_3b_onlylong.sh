@@ -32,6 +32,7 @@
 #   POP=5120 NUM_ITERATIONS=100 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 SHUFFLE=1 ./submit_h1_qwen25_3b_onlylong.sh
 #   POP=5120 LEARNING_RATE=0.004 NUM_ITERATIONS=50 SAVE_FREQ=10 EVAL_EVERY=10 JOBS=2 ./submit_h1_qwen25_3b_onlylong.sh
 #   AFTER=<jobid> ./submit_h1_qwen25_3b_onlylong.sh    # queue behind the curriculum chain
+#   SB_OPTS="--exclude=nid010771,nid010842" ./submit_h1_qwen25_3b_onlylong.sh   # extra sbatch options
 #
 # Each job is submit_h1_qwen25_3b_stage_correctonly.sh (idempotent: resumes from
 # the newest checkpoint, then merges EVAL_STEPS and evaluates on horizons 1-5
@@ -67,7 +68,7 @@ export FRESH=0
 
 dep="${AFTER:-}"
 for k in $(seq 1 "$JOBS"); do
-  args=(--job-name="eggroll-h1-q25-3b-onlylong${TAG}" --nodes="$NODES" --parsable)
+  args=(--job-name="eggroll-h1-q25-3b-onlylong${TAG}" --nodes="$NODES" --parsable ${SB_OPTS:-})
   [[ -n "$dep" ]] && args+=(--dependency="afterany:${dep}")
   jid="$(sbatch "${args[@]}" submit_h1_qwen25_3b_stage_correctonly.sh)"
   echo "only-long ($FITNESS) job $k/$JOBS -> $jid ${dep:+(after $dep)}"
