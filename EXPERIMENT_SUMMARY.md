@@ -653,6 +653,32 @@ about 2.8 / 2.0 / 1.6 points.
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{1200..1999}*`. W&B: training
 run bcpuvigs, held-out run heldout-0b1e74203d0ca1da (plot against `es_step`).
 
+**Memorisation check (job 7760655, 2026-10-27).** The held-out eval (`h1_gsm_eval.py`, unperturbed
+merged model, 2048 tokens) run on the 400 training questions instead of `test_len_5`:
+
+| checkpoint | train_len_5 (eval scorer) | test_len_5 |
+|---|---|---|
+| base | 4.0 | 3.0 |
+| step_1000 | 12.0 | 10.1 |
+| step_1999 | 20.5 | 8.6 |
+
+Up to step 1000 the two move together; after it only the training questions improve (+8.5 vs −1.5,
+about 4.7 standard errors apart at step 1999). So the second half of the run memorised the training
+set. Files: `results/summary/trainset_q25_3b_onlylen5_*`.
+
+**Training scorer vs eval scorer (`compare_scorers.py`, 12,000 training-log samples: the logged
+antithetic pair, 3 prompts, every step).** The training reward (`h1_rewards.correctness_reward`, h1's
+verbatim extractor) reads the *last* `<answer>` block of the whole completion. `h1_gsm_eval.py`
+(h1's eval) cuts the completion at the *first* `</answer>` and reads that block. 15-20 % of
+completions write several `<answer>` blocks, usually one per sub-problem, so the eval scores the
+step-1 answer. On the same texts the training scorer counts 1-2.5 points more correct (21.8 vs
+19.4 % over steps 1800-1999). Of the 203 disagreements, 198 are "correct by training, wrong by eval",
+all with 2-7 blocks. The other 5 are eval-only, e.g. `0.0044` accepted for 0 by the eval's 1e-2
+tolerance. Multi-block outputs are not growing (18.6 % at steps 0-199, 15.6 % at 1800-1999; among
+correct ones 31 % → 12 %), and the gap stays about constant, so the scorer mismatch does not explain
+the train/held-out divergence. It does mean the training reward pays for a format the eval rejects,
+and h1's own GRPO has the same mismatch (same verbatim extractor).
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
