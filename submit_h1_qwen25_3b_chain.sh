@@ -23,8 +23,9 @@ set -euo pipefail
 START_STAGE="${START_STAGE:-1}"
 END_STAGE="${END_STAGE:-4}"
 NODES="${NODES:-2}"           # 4 GPUs per node; 8 GPUs = 8 vLLM engines of 32 LoRAs each
-# jobs per stage (index = stage). Stage 1 only has ~100 steps left; 2/3/4 grow with tokens.
-declare -a JOBS_PER_STAGE=( "" 1 2 2 3 3 )
+# jobs per stage (index = stage); later stages grow with tokens. A spare job costs only
+# a re-printed eval table, while a stage that runs out of jobs blocks the next one (afterok).
+declare -a JOBS_PER_STAGE=( "" 2 2 2 3 3 )
 dep="${AFTER:-}"
 for stage in $(seq "$START_STAGE" "$END_STAGE"); do
   n="${JOBS_PER_STAGE[$stage]}"
