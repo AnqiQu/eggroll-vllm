@@ -170,6 +170,12 @@ def main() -> None:
             lid += 1
             reqs.append(LoRARequest(f"sigma{sigma:g}_m{m}", lid, path))
         members[sigma] = reqs
+    # The centre (and its temperature samples) also go through the LoRA path, as a zero adapter:
+    # vLLM's LoRA path alone changed 28-41% of greedy answers on test_len_3 (smoke job 7766574),
+    # so a plain centre would count that numerical shift as rescued / broken.
+    lid += 1
+    zero = LoRARequest("zero", lid, write_member_adapter(os.path.join(adapter_root, "zero"), shapes,
+                                                         0.0, args.rank, args.seed, pair=0, sign=1))
     print(f"wrote {lid} adapters ({len(shapes)} target weights each) to {adapter_root} in {time.time() - t0:.0f}s", flush=True)
 
     ev = GSM8KEvaluator(args.model, is_instruct=True, llm_kwargs={
@@ -187,20 +193,24 @@ def main() -> None:
         print(f"== {ds}: {P} problems", flush=True)
 
         t = time.time()
-        outs = ev.llm.generate(prompts, greedy)
+        outs = ev.llm.generate(prompts, greedy)   # plain path: comparable with the held-out eval
+        plain = [score(ev, o.outputs[0].text, g)[0] for o, g in zip(outs, gts)]
+        entry["centre_plain"] = {"correct": "".join(map(str, plain)), "acc": sum(plain) / P}
+        outs = ev.llm.generate(prompts, greedy, lora_request=zero)
         cscored = [score(ev, o.outputs[0].text, g) for o, g in zip(outs, gts)]
         centre, centre_preds = [c for c, _ in cscored], [p for _, p in cscored]
-        entry["centre"] = {"correct": "".join(map(str, centre)), "acc": sum(centre) / P,
+        entry["centre"] = {"correct": "".join(map(str, centre)), "acc": sum(centre) / P, "via": "zero LoRA",
                            "mean_tokens": sum(len(o.outputs[0].token_ids) for o in outs) / P}
         if args.save_preds:
             entry["centre"]["preds"] = centre_preds
-        print(f"   centre greedy acc {entry['centre']['acc']:.3f} ({time.time() - t:.0f}s)", flush=True)
+        print(f"   centre greedy acc {entry['centre']['acc']:.3f} (zero LoRA; plain path "
+              f"{entry['centre_plain']['acc']:.3f}) ({time.time() - t:.0f}s)", flush=True)
 
         if args.sample_temperature > 0:
             t = time.time()
             sp = SamplingParams(temperature=args.sample_temperature, n=n_samples, seed=args.seed,
                                 max_tokens=args.max_new_tokens)
-            outs = ev.llm.generate(prompts, sp)
+            outs = ev.llm.generate(prompts, sp, lora_request=zero)
             sc = [[score(ev, o.outputs[s].text, g)[0] for o, g in zip(outs, gts)] for s in range(n_samples)]
             entry["sampled"] = {"temperature": args.sample_temperature,
                                 "correct": ["".join(map(str, r)) for r in sc],
