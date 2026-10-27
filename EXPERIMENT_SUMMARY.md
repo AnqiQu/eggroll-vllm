@@ -677,7 +677,21 @@ all with 2-7 blocks. The other 5 are eval-only, e.g. `0.0044` accepted for 0 by 
 tolerance. Multi-block outputs are not growing (18.6 % at steps 0-199, 15.6 % at 1800-1999; among
 correct ones 31 % → 12 %), and the gap stays about constant, so the scorer mismatch does not explain
 the train/held-out divergence. It does mean the training reward pays for a format the eval rejects,
-and h1's own GRPO has the same mismatch (same verbatim extractor).
+and h1's own GRPO has the same mismatch (`h1/h1/grpo.py` reads the last block, `h1/gsm_eval.py:210`
+cuts at the first). In the ES curriculum (correctness only) multi-block completions are 0 % at
+stage 1, 3-6 % at stage 2, 5-6 % at stage 3, 6-8 % at stage 4. Runs trained with h1's format
+reward are pushed to a single block, so it should matter less there (not measured).
+
+**Decimal answers: the bigger mismatch, the other way round.** Ground truths are raw floats
+(`8.400000000000002`, `498.6666666666667`); 22 % of `train_len_2` and 35 % of `train_len_3` are
+non-integer. The eval accepts |pred − gt| < 1e-2 (498.67 counts). h1's GRPO reward needs < 1e-9, so a
+rounded repeating decimal earns 0 (~180 such questions in each of train_len_2/3). Our ES reward uses
+`h1_math_utils.grade_answer` and is stricter still: it also rejects `8.4` for `8.400000000000002`
+(236 / 232 questions in train_len_2/3 where even the exact value earns 0). In the ES curriculum logs
+this is the main disagreement: at stage 3, 154 of 3,810 samples are correct by the eval but 0 in
+training, about 1 in 9 eval-correct answers. `train_len_4` and `train_len_5` have only integer
+answers, while `test_len_4` / `test_len_5` are 38 % / 43 % decimal; decimal questions score lower
+held-out (step_1999 L-5: 9.5 % integer vs 7.5 % decimal; base 4.2 vs 1.4).
 
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
