@@ -693,6 +693,49 @@ training, about 1 in 9 eval-correct answers. `train_len_4` and `train_len_5` hav
 answers, while `test_len_4` / `test_len_5` are 38 % / 43 % decimal; decimal questions score lower
 held-out (step_1999 L-5: 9.5 % integer vs 7.5 % decimal; base 4.2 vs 1.4).
 
+### Why the format reward collapses ES Only-Long (log analysis, 2026-10-27)
+
+`analyze_format_logs.py` re-scores the completions the trainer logs (first antithetic pair, a few
+prompts per step) with each of h1's reward functions. `=step1`: the extracted answer equals the
+answer of sub-problem 1 (looked up in `train_len_1`, i.e. GSM8K train).
+
+**Total-reward arm (7605342, unstripped prompt), all logged completions:**
+
+| steps | correct | strict | soft | xmlcount (max 0.5) | full format (2.0) | >1 block | median chars | =step1 |
+|---|---|---|---|---|---|---|---|---|
+| 0-24 | 2.1 | 46 | 85 | 0.12 | 26 | 62 | 4308 | 24 |
+| 50-74 | 0.9 | 49 | 89 | 0.15 | 32 | 55 | 2028 | 33 |
+| 75-99 | 2.7 | 60 | 96 | 0.22 | 48 | 40 | 701 | 46 |
+| 150-174 | 0.7 | 90 | 99 | 0.41 | 83 | 13 | 482 | 76 |
+| 250-274 | 0.0 | 96 | 99 | 0.47 | 93 | 1 | 432 | 85 |
+| 575-599 | 0.0 | 99 | 100 | 0.49 | 98 | 0 | 416 | 73 |
+
+Over steps 0-74 (326 completions), format reward by length quartile: shortest 25 % (< 642 chars)
+1.90 on average, 0 % multi-block, 0 of 81 correct. The other three quartiles score 1.04-1.09, are
+51-100 % multi-block, and hold all 5 correct completions. The 172 completions that end
+`</answer>\n` (median 678 chars) average 1.69 format and none is correct. All 5 correct ones lack
+the trailing newline (median of that group 3511 chars). Correct completions in steps 0-99: 0 of 9 get the
+full format reward.
+
+- **At horizon 5 the format reward and correctness sit on different completions from the start.**
+  Full format is earned by short single-block answers, which only solve sub-problem 1. Correct
+  answers are long, often multi-block, and get about 1.0 of the 2.0 format reward. The format gap
+  (~0.85) is available on nearly every rollout, the correctness reward (2.0) on ~2 %, so the
+  update follows format: length 4300 → 430 chars and `=step1` 24 % → ~80 % by step 250, with
+  correctness gone.
+- **This is not the strip bug.** The prompt was unstripped and the model learns `</answer>\n`
+  (strict 46 % → 99 %). The conflict is structural: one short block vs a long multi-step solution.
+- Caveat: 204 of 3,395 logged fitnesses are not reproduced from the logged text (6 %; the log
+  may not keep the text byte for byte). The correctness-only arm reproduces all 12,000.
+
+**Correctness-only arm (stripped prompt), correct completions:** 1,392 logged, none passes strict
+format; 80 % fail only for the missing `</answer>\n` (the stripped prompt's example ends without it),
+15 % have several blocks, 6 % have none. Their xmlcount is −1.3 to −1.7 (the whole-text length
+penalty). Soft format falls from 72 % to 20 % of correct completions over the 2000 steps: with
+correctness only, the format drifts. Base behaviour differs with the prompt: 62 % of completions
+are multi-block in the first 25 steps of the unstripped-prompt run vs 20 % in the first 400 of the
+stripped-prompt one (small sample, 97 completions).
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
