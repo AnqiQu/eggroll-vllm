@@ -610,6 +610,49 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
 
+### ES Only-Long, pop 256, extended to 2000 steps (finished 2026-10-27)
+
+Job 7733038 (resumed from checkpoint_step_1199, 17 h on 2 nodes; 7733039 only re-ran the
+summaries). Same recipe as before: correctness only, lr 2e-4, 8 prompts per step from the
+400-question `train_len_5`, so one pass over the training set is 50 steps and 2000 steps is 40.
+
+| checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 | train correct (100-step mean ending here) |
+|---|---|---|---|---|---|---|
+| base | 82.1 | 33.8 | 22.8 | 8.3 | 3.0 | 3.1 % (steps 0-99) |
+| step_1000 | 85.7 | 58.7 | 35.0 | 15.3 | 10.1 | 9.7 % |
+| step_1199 | 85.8 | 58.9 | 34.7 | 20.6 | 7.4 | 11.3 % |
+| step_1400 | 86.0 | 57.1 | 37.1 | 20.9 | 10.7 | 13.1 % |
+| step_1600 | 85.1 | 55.8 | 34.7 | 18.5 | 10.1 | 14.7 % |
+| step_1700 | 85.1 | 57.3 | 40.1 | 22.3 | 10.7 | 15.5 % |
+| BEST step_1800 | 85.1 | 57.1 | 40.8 | 16.6 | 9.5 | 16.3 % |
+| step_1900 | 85.6 | 57.9 | 39.5 | 19.6 | 10.4 | 17.0 % |
+| step_1999 | 85.5 | 57.5 | 37.8 | 20.6 | 8.6 | 17.7 % |
+| h1 Len-5 curriculum (paper) | 86.0 | 58.5 | 36.4 | 18.8 | 9.8 | |
+| GRPO curriculum stage 5, pub (7601033) BEST step_200 | 86.0 | 60.8 | 42.5 | 18.8 | 11.6 | |
+
+Means over checkpoints (L-3 / L-4 / L-5): steps 1000-1200 33.9 / 17.8 / 8.9; 1300-1500
+35.6 / 19.6 / 9.3; 1600-1999 38.6 / 19.5 / 9.9. One-sigma binomial noise per checkpoint is
+about 2.8 / 2.0 / 1.6 points.
+
+- **Held-out has plateaued; training correctness has not.** Training correctness rises at an
+  almost constant ~0.8 points per 100 steps the whole way (3.1 % → 17.7 %, disagree 0.06 → 0.21).
+  Held-out L-1 and L-2 have been flat since ~step 700-800 (L-1 drifts down ~1 point from its
+  86.5 peak), L-4 since ~1200 (~19.5) and L-5 since ~1000 (~9-10). Only L-3 still edges up
+  (~34 → ~39 over the last 1000 steps, about 2 sigma).
+- **The gap is overfitting to the 400 training questions.** At step 1000 training correctness
+  (10.5 % over 1000-1099) and held-out L-5 (10.1 %) agree, as they do at the base (3.1 vs 3.0);
+  by step 1999 it is 17.7 % vs 8.6-10.4 %. After 40 passes the extra training reward comes
+  from questions it has seen, not from horizon-5 skill.
+- **Where it ends up:** level with the paper's Len-5 curriculum on every horizon (step_1700 is
+  above it on L-3..L-5), from the base model with no curriculum, but below our GRPO curriculum
+  on L-2/L-3 (57 vs 61, ~39 vs 42.5). Getting there took ~1000 steps (8,000 questions seen,
+  256 × 8 × 1000 = 2M rollouts).
+- More steps on the same 400 questions are not worth it. To keep improving it would need more
+  training data (fresh horizon-5 problems) or regularisation, not a longer run.
+
+Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{1200..1999}*`. W&B: training
+run bcpuvigs, held-out run heldout-0b1e74203d0ca1da (plot against `es_step`).
+
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
 - `eggroll_noise.py`: EGGROLL-shaped low-rank parameter noise, shared by the next two scripts.
