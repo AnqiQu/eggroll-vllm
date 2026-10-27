@@ -2,11 +2,15 @@
 #SBATCH --job-name=eggroll-pop-eval
 #SBATCH --output=logs/eggroll-pop-eval-%j.out
 #SBATCH --nodes=1
-#SBATCH --gpus=1
+#SBATCH --gpus-per-node=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120G
 #SBATCH --time=12:00:00
 
+# 1 GPU requested as --gpus-per-node=1 + --mem, like submit_eval_rolling.sh: with --gpus=1
+# vLLM failed at init with "CUDA-capable device(s) is/are busy or unavailable" (job 7766548).
+#
 # Population evaluation (population_eval.py): score N EGGROLL-shaped perturbations
 # of each model (one vLLM engine, members as rank-1 LoRA adapters) plus N
 # temperature samples of the unperturbed model, and summarise coverage /
