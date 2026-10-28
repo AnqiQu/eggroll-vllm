@@ -626,6 +626,9 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
   373 problems, one-sigma binomial noise ~2.2 pts). The run stopped at NUM_ITERATIONS = 50.
 - So with the update size fixed by std normalisation, the number of updates × lr was the
   bottleneck, and the bigger population is what makes a 20× larger step safe.
+- Extension to 70 steps submitted 2026-10-28 (7793741, 5 nodes, resumes from checkpoint 49, evals
+  at 50 and 60 and 69) to see whether L-4 and the training reward keep rising: training
+  `frac_correct` (10-step means) was 6.0 / 5.9 / 9.2 / 12.0 / 13.6 % over steps 0-49.
 
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
@@ -839,10 +842,24 @@ resubmitted excluding it (7791901).
   accuracy and cover 72.8%, while T = 1 samples average 13.5% and cover 65.0%. For GRPO, which
   trained at T = 1, sampling holds up better (20.3% / 71.4%) but σ 1e-3 still covers more at a
   higher mean.
-- One pair, and the GRPO centre is 2.7 pts more accurate on L-3; the stage-1 pair (ES s1 step 50
-  vs GRPO pub s1 step 300 on test_len_2) is the check. ES alone at stage 1 is sharper than at
-  stage 2: 50.4 → 44.0 / 36.4 / 22.6 at σ 5e-4 / 1e-3 / 2e-3, cov@32 86.5 / 89.0 / 84.9
-  (T = 1: 32.3 / 87.3).
+- The GRPO centre is 2.7 pts more accurate on L-3 here; the stage-1 pair below is the check.
+
+**Stage-1 pair on test_len_2 (482 problems), read 2026-10-28** (GRPO rerun 7791901):
+
+| | centre | σ 5e-4: mean / cov@32 | σ 1e-3: mean / cov@32 | σ 2e-3: mean / cov@32 | T = 1: mean / cov@32 |
+|---|---|---|---|---|---|
+| ES s1 step 50 | 50.4 | 44.0 / 86.5 | 36.4 / 89.0 | 22.6 / 84.9 | 32.3 / 87.3 |
+| GRPO pub s1 step 300 | 45.6 | 44.3 / 85.9 | 42.4 / 86.1 | 29.4 / 86.1 | 39.3 / 87.6 |
+
+- **At stage 1 the ES checkpoint is sharper, not flatter:** it loses 6.4 / 14.0 / 27.8 pts at
+  σ 5e-4 / 1e-3 / 2e-3, GRPO 1.3 / 3.2 / 16.2. From σ 5e-4 on, the noisy ES copies are no more
+  accurate on average than the noisy GRPO copies, although the ES centre starts 4.8 pts higher.
+- **Coverage is the same again** (cov@32 85-89% for both at every σ, and for T = 1 sampling).
+- Both pairs agree: noise around a GRPO checkpoint gives the same next-horizon coverage as
+  noise around an ES checkpoint, and the ES checkpoint is never the flatter one. So far the
+  evidence is for smoothing (any weight noise), not for something specific to the ES point or
+  population. Possible confound at stage 1: ES step 50 is an early checkpoint of a greedy-decoded
+  run, while GRPO step 300 trained 300 steps at T = 1, which may itself make it robust to noise.
 
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
