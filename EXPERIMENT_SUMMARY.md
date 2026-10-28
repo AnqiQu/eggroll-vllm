@@ -620,7 +620,7 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 | h1 Len-5 curriculum (GRPO, paper) | | 85.97 | 58.51 | 36.39 | 18.77 | 9.82 |
 
 - In 50 steps (2.0M rollouts) it matches the pop-256 run's best of 2000 steps (4.1M rollouts)
-  on L-1, L-2 and L-5 and beats it on L-4; step_49 is at or above h1's Len-5 curriculum on every
+  on L-1, L-2 and L-5, beats it on L-4 (24.4 vs 16.6) and trails it on L-3 (36.4 vs 40.8); step_49 is at or above h1's Len-5 curriculum on every
   horizon except L-2 (-0.8), straight from the base model with no curriculum.
 - L-1..L-3 and L-5 are flat from step ~20-40; L-4 is still rising at step 49 (one checkpoint,
   373 problems, one-sigma binomial noise ~2.2 pts). The run stopped at NUM_ITERATIONS = 50.
