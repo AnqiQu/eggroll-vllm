@@ -607,6 +607,26 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
   training, but each requeue truncates the job's .out file, so steps 86-99 of the training
   log are lost (checkpoints, evals and W&B are intact).
 
+**The larger lr is what was missing (pop 5120, lr 4e-3 = 20× the default, 50 steps; 7754655 → 56, finished 2026-10-27).**
+
+| Run | checkpoint | L-1 | L-2 | L-3 | L-4 | L-5 |
+|---|---|---|---|---|---|---|
+| pop 5120, lr 4e-3 | step_10 | 84.2 | 59.3 | 31.3 | 11.8 | 6.2 |
+| | step_20 | 84.9 | 57.7 | 34.0 | 14.2 | 10.1 |
+| | step_30 | 84.5 | 58.3 | 33.0 | 19.6 | 10.1 |
+| | BEST step_40 | 85.2 | 57.9 | 37.1 | 18.5 | 10.4 |
+| | step_49 | 86.0 | 57.7 | 36.4 | **24.4** | 10.4 |
+| pop 256, lr 2e-4, BEST of 2000 steps | step_1800 | 85.1 | 57.1 | 40.8 | 16.6 | 9.5 |
+| h1 Len-5 curriculum (GRPO, paper) | | 85.97 | 58.51 | 36.39 | 18.77 | 9.82 |
+
+- In 50 steps (2.0M rollouts) it matches the pop-256 run's best of 2000 steps (4.1M rollouts)
+  on L-1, L-2 and L-5 and beats it on L-4; step_49 is at or above h1's Len-5 curriculum on every
+  horizon except L-2 (-0.8), straight from the base model with no curriculum.
+- L-1..L-3 and L-5 are flat from step ~20-40; L-4 is still rising at step 49 (one checkpoint,
+  373 problems, one-sigma binomial noise ~2.2 pts). The run stopped at NUM_ITERATIONS = 50.
+- So with the update size fixed by std normalisation, the number of updates × lr was the
+  bottleneck, and the bigger population is what makes a 20× larger step safe.
+
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
 
@@ -745,7 +765,37 @@ stripped-prompt one (small sample, 97 completions).
 
 The gated run is on 1 node so that the total stays within 8 nodes while pop 5120 uses 5.
 
-## Noise on ES vs GRPO checkpoints (population eval, submitted 2026-10-27)
+**Results (read 2026-10-28).**
+
+| Run | step | L-1 | L-2 | L-3 | L-4 | L-5 |
+|---|---|---|---|---|---|---|
+| base | | 82.2 | 33.8 | 23.5 | 8.3 | 3.0 |
+| Only-Long, gated (soft) | 50 | 83.4 | 38.2 | 24.8 | 8.3 | 3.9 |
+| | 100 | 83.9 | 39.0 | 18.7 | 8.8 | 2.7 |
+| | 150 | 83.0 | 44.8 | 24.8 | 7.0 | 3.0 |
+| | 199 | 83.9 | 44.6 | 27.9 | 9.4 | 3.9 |
+| Only-Long, total (7605342) | 100 | 83.7 | 41.5 | 15.0 | 2.9 | 0.6 |
+| | 200 | 83.8 | 22.4 | 6.5 | 0.3 | 0.9 |
+| Only-Long, correctness only | 100 | 84.1 | 52.7 | 23.1 | 8.8 | 3.0 |
+| | 200 | 85.1 | 51.9 | 25.2 | 10.2 | 3.0 |
+| Curriculum stage 1, full reward | BEST 50 | 84.2 | 46.7 | 23.8 | 8.8 | |
+| | 599 | 85.1 | 43.4 | 17.7 | 7.5 | |
+| Curriculum stage 1, correctness only | BEST 50 | 85.0 | 52.1 | 21.8 | 7.8 | |
+
+- **The gate removes the collapse but learns more slowly.** Gated Only-Long rises steadily
+  (L-2 33.8 → 44.6 by step 199) where the total arm falls to L-2 22 by step 200, but it stays
+  ~7 pts behind correctness only on L-2 and does not move L-4/L-5. A correct answer only scores
+  when it also passes the format check, so fewer pairs carry a correctness difference.
+- **Full reward at stage 1 is fine for ES once the prompt is unstripped:** format is learned
+  (training `frac_format_ok` 0.99 at the end, `frac_correct` 0.84) and the held-out curve has
+  the same shape as correctness only (best at step 50, slow L-2/L-3 decline after), about 4 pts
+  lower on L-1..L-3 combined (154.7 vs 158.8).
+- **Stage 2 has not run.** Both jobs (7763812/13) landed on the same node pair
+  (nid011107 + nid011201) and every attempt died at engine start-up with
+  `NCCL error: invalid usage` in `init_inter_engine_group`, before any training step.
+  Resubmitted 2026-10-28 with those nodes excluded: 7791903 → 7791905.
+
+## Noise on ES vs GRPO checkpoints (population eval, 2026-10-27/28)
 
 Experiments 2 + 4a of the 2026-09-25 meeting plan: add EGGROLL-shaped noise (rank 1, the 7
 projections of every layer, antithetic pairs, same draws for every model) to an ES and a GRPO
@@ -760,15 +810,39 @@ curriculum's BEST steps (h1's rule; h1's README also starts each stage from the 
 | stage 2 | ES s2 step 500 (86.4 / 58.3 / 33.7) vs GRPO pub s2 step 150 (87.1 / 58.9 / 38.1) | test_len_3 (294) | 7766752, 7766753 |
 
 σ ∈ {0, 5e-4, 1e-3, 2e-3}; results `results/pop_{s1_on_len2,s2_on_len3}_<label>.json`.
-Smoke tests (7766574, 7766633; 16 problems, 4 copies) found two things that shape the reading:
-- vLLM's LoRA path alone changed 28-41% of greedy answers vs the plain path, so the centre is
-  now generated through a zero adapter (`centre`; the plain-path run is kept as `centre_plain`).
-- Generation is not deterministic at this length: even through the same path, about a third of
-  extracted answers (mostly wrong ones) differ between identical models, and correctness
-  occasionally flips. The σ = 0 block (32 identical copies) is the noise floor for coverage,
-  rescued and broken; compare the σ > 0 blocks against it, not against 0.
-- `--gpus=1` failed at vLLM init on a shared node; the script now asks for the GPU like the
-  rolling eval (`--gpus-per-node=1 --mem=120G`).
+The centre is generated through a zero LoRA adapter (`centre`; the plain path is kept as
+`centre_plain`), and σ = 0 (32 identical copies) is the noise floor. In the 16-problem smoke tests
+(7766574, 7766633) the LoRA path and run-to-run nondeterminism changed about a third of extracted
+answers; at full size the effect is small (centre vs plain path within 0.6 pts, σ = 0 copies
+change 1-7% of answers, coverage@32 at σ = 0 within 0.4 pts of the centre).
+Two jobs (7766548, 7766751) died with `CUDA-capable device(s) is/are busy or unavailable` at vLLM
+start-up; both ran on nid010145, so it is that node, not the GPU request. grpo_pub_s1 was
+resubmitted excluding it (7791901).
+
+**Stage-2 pair on test_len_3 (294 problems), read 2026-10-28:**
+
+| | centre | σ 5e-4: mean / cov@32 | σ 1e-3: mean / cov@32 | σ 2e-3: mean / cov@32 | T = 1: mean / cov@32 |
+|---|---|---|---|---|---|
+| ES s2 step 500 | 34.0 | 30.7 / 72.8 | 26.0 / 72.8 | 13.5 / 68.0 | 13.5 / 65.0 |
+| GRPO pub s2 step 150 | 36.7 | 33.0 / 70.1 | 29.8 / 75.2 | 16.5 / 73.5 | 20.3 / 71.4 |
+
+(mean = average accuracy of the 32 noisy copies; cov@32 = problems at least one copy solves.)
+- **The ES checkpoint is not flatter.** Accuracy lost to noise is the same for both: -3.3 vs
+  -3.7 pts at σ 5e-4, -8.0 vs -6.9 at 1e-3, -20.5 vs -20.2 at 2e-3. Antithetic pairs disagree
+  equally often (25.7% vs 25.9% at σ 1e-3), and rescued (centre wrong, some copy right) is
+  33-40% for both at every σ.
+- **Noise on the GRPO weights gives the same coverage as noise on the ES weights** (70-75% vs
+  68-73%; GRPO slightly higher, within the noise of 294 problems). So the "population covers
+  more of the next horizon" effect is a property of weight noise around either checkpoint, not
+  of the ES-trained point: by this test the story is smoothing, not the population.
+- Weight noise explores better than token sampling: at σ 5e-4 the ES copies keep 30.7% mean
+  accuracy and cover 72.8%, while T = 1 samples average 13.5% and cover 65.0%. For GRPO, which
+  trained at T = 1, sampling holds up better (20.3% / 71.4%) but σ 1e-3 still covers more at a
+  higher mean.
+- One pair, and the GRPO centre is 2.7 pts more accurate on L-3; the stage-1 pair (ES s1 step 50
+  vs GRPO pub s1 step 300 on test_len_2) is the check. ES alone at stage 1 is sharper than at
+  stage 2: 50.4 → 44.0 / 36.4 / 22.6 at σ 5e-4 / 1e-3 / 2e-3, cov@32 86.5 / 89.0 / 84.9
+  (T = 1: 32.3 / 87.3).
 
 ## Post-meeting experiment code (written 2026-09-29, not yet run)
 
