@@ -626,7 +626,8 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
   373 problems, one-sigma binomial noise ~2.2 pts). The run stopped at NUM_ITERATIONS = 50.
 - So with the update size fixed by std normalisation, the number of updates × lr was the
   bottleneck, and the bigger population is what makes a 20× larger step safe.
-- Extension to 70 steps submitted 2026-10-28 (7793741, 5 nodes, resumes from checkpoint 49, evals
+- Extension to 70 steps: 7793741 died at NCCL start-up on nid011014 (all three attempts, inside the
+  aws-ofi-nccl plugin init); resubmitted 2026-10-29 as 7814706 excluding it. Planned: 5 nodes, resumes from checkpoint 49, evals
   at 50 and 60 and 69) to see whether L-4 and the training reward keep rising: training
   `frac_correct` (10-step means) was 6.0 / 5.9 / 9.2 / 12.0 / 13.6 % over steps 0-49.
 
@@ -793,10 +794,26 @@ The gated run is on 1 node so that the total stays within 8 nodes while pop 5120
   (training `frac_format_ok` 0.99 at the end, `frac_correct` 0.84) and the held-out curve has
   the same shape as correctness only (best at step 50, slow L-2/L-3 decline after), about 4 pts
   lower on L-1..L-3 combined (154.7 vs 158.8).
-- **Stage 2 has not run.** Both jobs (7763812/13) landed on the same node pair
-  (nid011107 + nid011201) and every attempt died at engine start-up with
-  `NCCL error: invalid usage` in `init_inter_engine_group`, before any training step.
-  Resubmitted 2026-10-28 with those nodes excluded: 7791903 → 7791905.
+- **Stage 2** (first try 7763812/13 died at NCCL start-up on nid011107 + nid011201; rerun
+  7791903 excluding them, 6.5 h, read 2026-10-29) shows **format first, then correctness**:
+
+| step | 50 | 150 | 200 | 300 | 350 | 400 | 450 | 500 | 550 | 599 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| held-out L-2, full reward | 44.6 | 33.4 | 23.7 | 23.0 | 22.2 | 35.7 | 42.5 | 52.3 | 54.6 | **55.0** |
+| held-out L-3, full reward | 23.1 | 16.7 | 14.6 | 11.6 | 10.9 | 17.3 | 18.7 | 24.8 | 24.1 | 27.6 |
+| median answer chars (L-2) | 1109 | 931 | 778 | 681 | 722 | 918 | 1029 | 1156 | | 1174 |
+| held-out L-2, correctness only | 47.5 | 52.3 | 50.4 | 54.8 | 56.4 | 56.8 | 58.5 | 58.3 | 57.9 | 56.2 |
+
+  Training (100-step means): `frac_format_ok` 3.5 / 7 / 18 / 69 / 89 / 93 %, `frac_correct`
+  48.8 / 47.9 / 48.6 / 51.2 / 52.2 / 54.6 %. While format is being learned (steps 100-400)
+  answers get shorter and held-out L-2 halves; once format saturates (~90% from step 400),
+  correctness rises in training and held-out L-2 recovers to 55.0, still rising at step 599.
+  This is the supervisor's 2026-09-14 "format plateaus, then correctness" pattern, which the
+  stripped-prompt gated runs never reached. Not an extraction artefact: no completion has more
+  than one answer block and 1-2% have no answer at every step. BEST is step_599
+  (84.5 / 55.0 / 27.6 / 10.5, L1-3 167.1), still behind correctness only (BEST 178.3).
+  Open: training uses the unstripped prompt, the held-out eval the stripped one, so part of the
+  dip may be specific to the eval prompt.
 
 ## Noise on ES vs GRPO checkpoints (population eval, 2026-10-27/28)
 
