@@ -645,6 +645,8 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 - Steps 50-69 are the second pass over the 400 training questions, so the training-vs-held-out
   gap (16.8 % vs 12.8 % L-5) may start to include memorisation, as it did for pop 256 after ~1000
   steps.
+- Extension to 100 steps submitted 2026-10-30 as 7860895 (5 nodes, same excludes, resumes from
+  checkpoint 69, evals at 70 / 80 / 90 / 99).
 
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
