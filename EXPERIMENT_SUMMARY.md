@@ -616,8 +616,12 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 | | step_30 | 84.5 | 58.3 | 33.0 | 19.6 | 10.1 |
 | | BEST step_40 | 85.2 | 57.9 | 37.1 | 18.5 | 10.4 |
 | | step_49 | 86.0 | 57.7 | 36.4 | **24.4** | 10.4 |
+| extension (7814706) | step_50 | 85.4 | 59.3 | 38.8 | 19.6 | 13.4 |
+| | step_60 | 86.3 | 58.7 | 39.5 | 21.7 | 12.5 |
+| | BEST step_69 | 85.8 | 60.6 | 42.9 | 25.2 | 12.8 |
 | pop 256, lr 2e-4, BEST of 2000 steps | step_1800 | 85.1 | 57.1 | 40.8 | 16.6 | 9.5 |
 | h1 Len-5 curriculum (GRPO, paper) | | 85.97 | 58.51 | 36.39 | 18.77 | 9.82 |
+| GRPO curriculum stage 5, pub (7601033) BEST | step_200 | 86.0 | 60.8 | 42.5 | 18.8 | 11.6 |
 
 - In 50 steps (2.0M rollouts) it matches the pop-256 run's best of 2000 steps (4.1M rollouts)
   on L-1, L-2 and L-5, beats it on L-4 (24.4 vs 16.6) and trails it on L-3 (36.4 vs 40.8); step_49 is at or above h1's Len-5 curriculum on every
@@ -627,9 +631,20 @@ Files: `results/summary/q25_3b_onlylen5{,_total}_fp32master_sigma0.001_*`, `resu
 - So with the update size fixed by std normalisation, the number of updates × lr was the
   bottleneck, and the bigger population is what makes a 20× larger step safe.
 - Extension to 70 steps: 7793741 died at NCCL start-up on nid011014 (all three attempts, inside the
-  aws-ofi-nccl plugin init); resubmitted 2026-10-29 as 7814706 excluding it. Planned: 5 nodes, resumes from checkpoint 49, evals
-  at 50 and 60 and 69) to see whether L-4 and the training reward keep rising: training
-  `frac_correct` (10-step means) was 6.0 / 5.9 / 9.2 / 12.0 / 13.6 % over steps 0-49.
+  aws-ofi-nccl plugin init); resubmitted 2026-10-29 as 7814706 excluding it, which finished the
+  same day (5 nodes, 4 h 46 m, resumed from checkpoint 49).
+- **Not plateaued at 70 steps.** L1-3 totals 180.0 (step 49) → 183.5 / 184.4 / 189.3 (50 / 60 / 69).
+  L-3 36.4 → 42.9 (+6.5, ~1.6 sigma of the difference, 294 problems), L-5 ~10 → ~13, L-2 to 60.6.
+  L-4 is noisy (24.4 → 19.6 one step later) but ends at 25.2. Training `frac_correct` (10-step
+  means) 6.0 / 5.9 / 9.2 / 12.0 / 13.6 % over steps 0-49, then 19.3 / 16.8 % over 50-59 / 60-69
+  (per-step 9-36 %: only 8 questions per step).
+- step_69 is at or above our GRPO curriculum's BEST stage-5 checkpoint on every horizon
+  (L-4 25.2 vs 18.8, L-5 12.8 vs 11.6, L-1..L-3 within 0.4) and above h1's Len-5 checkpoint on all
+  five, from the base model with no curriculum, in 70 steps (2.9M rollouts). Single checkpoints, so
+  each cell carries ~2-3 points of binomial noise.
+- Steps 50-69 are the second pass over the 400 training questions, so the training-vs-held-out
+  gap (16.8 % vs 12.8 % L-5) may start to include memorisation, as it did for pop 256 after ~1000
+  steps.
 
 Files: `results/summary/q25_3b_onlylen5_fp32master_sigma0.001_step_{700..1199}*`,
 `results/summary/grpo_fix_pub_onlylong5_plain_conly_*`, `results/summary/grpo600_fix_pub_len5_plain_*`.
